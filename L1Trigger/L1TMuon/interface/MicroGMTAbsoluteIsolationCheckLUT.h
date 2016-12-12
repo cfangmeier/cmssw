@@ -6,13 +6,12 @@
 
 
 namespace l1t {
-  class MicroGMTAbsoluteIsolationCheckLUT : MicroGMTLUT {
+  class MicroGMTAbsoluteIsolationCheckLUT : public MicroGMTLUT {
     public: 
-      MicroGMTAbsoluteIsolationCheckLUT (const edm::ParameterSet& iConfig, const std::string& setName);
-      MicroGMTAbsoluteIsolationCheckLUT (const edm::ParameterSet& iConfig, const char* setName);
-      virtual ~MicroGMTAbsoluteIsolationCheckLUT ();
-
-
+      MicroGMTAbsoluteIsolationCheckLUT() {};
+      explicit MicroGMTAbsoluteIsolationCheckLUT(const std::string& fname);
+      explicit MicroGMTAbsoluteIsolationCheckLUT(l1t::LUT* lut);
+      virtual ~MicroGMTAbsoluteIsolationCheckLUT() {};
 
       // returns the index corresponding to the calo tower sum 
       int lookup(int energySum) const;

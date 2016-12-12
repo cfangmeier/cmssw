@@ -27,6 +27,9 @@ from DQMOffline.Trigger.HLTInclusiveVBFSource_cfi import *
 # tracking
 from DQMOffline.Trigger.TrackingMonitoring_cff import *
 
+# trackingPA
+from DQMOffline.Trigger.TrackingMonitoringPA_cff import *
+
 # strip
 from DQMOffline.Trigger.SiStrip_OfflineMonitoring_cff import *
 
@@ -35,6 +38,12 @@ from DQMOffline.Trigger.HigPhotonJetHLTOfflineSource_cfi import *
 
 #hotline 
 from DQMOffline.Trigger.hotlineDQM_cfi import *
+
+#eventshape
+from DQMOffline.Trigger.eventshapeDQM_cfi import *
+
+#UCC
+from DQMOffline.Trigger.heavyionUCCDQM_cfi import *
 
 import DQMServices.Components.DQMEnvironment_cfi
 dqmEnvHLT= DQMServices.Components.DQMEnvironment_cfi.dqmEnv.clone()
@@ -55,6 +64,8 @@ offlineHLTSource = cms.Sequence(
     higPhotonJetHLTOfflineSource*
     dqmEnvHLT *
     topHLTriggerOfflineDQM *
+    eventshapeDQMSequence *
+    HeavyIonUCCDQMSequence *
     hotlineDQMSequence
     )
 
@@ -65,9 +76,15 @@ dqmInfoHLTMon = cms.EDAnalyzer("DQMEventInfo",
 
 OfflineHLTMonitoring = cms.Sequence(
     dqmInfoHLTMon *
-    sistripMonitorHLTsequence * 
+    sistripMonitorHLTsequence *
     BTVHLTOfflineSource *
     trackingMonitorHLT
+    )
+
+OfflineHLTMonitoringPA = cms.Sequence(
+    dqmInfoHLTMon *
+    trackingMonitorHLT *
+    PAtrackingMonitorHLT  
     )
 
 triggerOfflineDQMSource =  cms.Sequence(offlineHLTSource)

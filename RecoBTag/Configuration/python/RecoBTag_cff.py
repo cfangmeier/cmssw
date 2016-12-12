@@ -13,15 +13,13 @@ legacyBTagging = cms.Sequence(
       # impact parameters and IP-only algorithms
       impactParameterTagInfos *
       ( trackCountingHighEffBJetTags +
-        trackCountingHighPurBJetTags +
         jetProbabilityBJetTags +
         jetBProbabilityBJetTags +
 
         # SV tag infos depending on IP tag infos, and SV (+IP) based algos
         secondaryVertexTagInfos *
         ( simpleSecondaryVertexHighEffBJetTags +
-          simpleSecondaryVertexHighPurBJetTags +
-          combinedSecondaryVertexBJetTags
+          combinedSecondaryVertexV2BJetTags
         )
         + inclusiveSecondaryVertexFinderTagInfos *
         combinedInclusiveSecondaryVertexV2BJetTags
@@ -38,8 +36,7 @@ legacyBTagging = cms.Sequence(
     )
 
     # overall combined taggers
-    * combinedMVABJetTags
-    + combinedMVAV2BJetTags
+    * combinedMVAV2BJetTags
 )
 
 # new candidate-based fwk, with PF inputs
@@ -48,19 +45,17 @@ pfBTagging = cms.Sequence(
       # impact parameters and IP-only algorithms
       pfImpactParameterTagInfos *
       ( pfTrackCountingHighEffBJetTags +
-        pfTrackCountingHighPurBJetTags +
         pfJetProbabilityBJetTags +
         pfJetBProbabilityBJetTags +
 
         # SV tag infos depending on IP tag infos, and SV (+IP) based algos
         pfSecondaryVertexTagInfos *
         ( pfSimpleSecondaryVertexHighEffBJetTags +
-          pfSimpleSecondaryVertexHighPurBJetTags +
-          pfCombinedSecondaryVertexBJetTags +
           pfCombinedSecondaryVertexV2BJetTags
         )
         + inclusiveCandidateVertexing *
         pfInclusiveSecondaryVertexFinderTagInfos *
+        pfSimpleInclusiveSecondaryVertexHighEffBJetTags *
         pfCombinedInclusiveSecondaryVertexV2BJetTags
 
       ) +
@@ -74,11 +69,8 @@ pfBTagging = cms.Sequence(
 
     # overall combined taggers
     ( #CSV + soft-lepton + jet probability discriminators combined
-      pfCombinedMVABJetTags
-      + pfCombinedMVAV2BJetTags
+      pfCombinedMVAV2BJetTags
 
-      #CSV + soft-lepton variables combined (btagger)
-      + pfCombinedSecondaryVertexSoftLeptonBJetTags
     )
 )
 

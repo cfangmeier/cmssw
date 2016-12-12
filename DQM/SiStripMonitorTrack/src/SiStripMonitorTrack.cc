@@ -26,7 +26,7 @@ SiStripMonitorTrack::SiStripMonitorTrack(const edm::ParameterSet& conf):
   conf_(conf),
   tracksCollection_in_EventTree(true),
   firstEvent(-1),
-  genTriggerEventFlag_(new GenericTriggerEventFlag(conf, consumesCollector(), *this))
+  genTriggerEventFlag_(new GenericTriggerEventFlag(conf.getParameter<edm::ParameterSet>("genericTriggerEventPSet"), consumesCollector(), *this))
 {
   Cluster_src_   = conf.getParameter<edm::InputTag>("Cluster_src");
   Mod_On_        = conf.getParameter<bool>("Mod_On");
@@ -218,7 +218,7 @@ void SiStripMonitorTrack::book(DQMStore::IBooker & ibooker , const TrackerTopolo
       // book module plots
       folder_organizer.setDetectorFolder(detid,tTopo);
       bookModMEs(ibooker , *detid_iter);
-    }//end loop on detectors detid
+   }//end loop on detectors detid
   } else {
     for (std::vector<uint32_t>::const_iterator detid_iter=vdetId_.begin(),detid_end=vdetId_.end();detid_iter!=detid_end;++detid_iter){  //loop on all the active detid
       uint32_t detid = *detid_iter;
@@ -401,10 +401,12 @@ void SiStripMonitorTrack::bookLayerMEs(DQMStore::IBooker & ibooker , const uint3
   if (layer_id.find("TEC") != std::string::npos)  total_nr_strips = 3 * 2 * 128;
 
   hname = hidmanager.createHistoLayer("Summary_ClusterPosition",name,layer_id,"OnTrack");
-  theLayerMEs.ClusterPosOnTrack = ibooker.book1D(hname, hname, total_nr_strips, 0.5,total_nr_strips+0.5);
+  hpar = "TH1ClusterPos";
+  if ( layer_id.find("TIB") != std::string::npos || layer_id.find("TOB") != std::string::npos || (conf_.getParameter<edm::ParameterSet>(hpar.c_str())).getParameter<bool>(view.c_str()) ) theLayerMEs.ClusterPosOnTrack = ibooker.book1D(hname, hname, total_nr_strips, 0.5,total_nr_strips+0.5);
 
   hname = hidmanager.createHistoLayer("Summary_ClusterPosition",name,layer_id,"OffTrack");
-  theLayerMEs.ClusterPosOffTrack = ibooker.book1D(hname, hname, total_nr_strips, 0.5,total_nr_strips+0.5);
+  hpar = "TH1ClusterPos";
+  if ( layer_id.find("TIB") != std::string::npos || layer_id.find("TOB") != std::string::npos || (conf_.getParameter<edm::ParameterSet>(hpar.c_str())).getParameter<bool>(view.c_str()) ) theLayerMEs.ClusterPosOffTrack = ibooker.book1D(hname, hname, total_nr_strips, 0.5,total_nr_strips+0.5);
 
   // dQ/dx
   hname = hidmanager.createHistoLayer("Summary_ClusterChargePerCMfromTrack",name,layer_id,"");
@@ -442,6 +444,8 @@ void SiStripMonitorTrack::bookRingMEs(DQMStore::IBooker & ibooker , const uint32
   theRingMEs.ClusterNoiseOffTrack                 = 0;
   theRingMEs.ClusterWidthOnTrack                  = 0;
   theRingMEs.ClusterWidthOffTrack                 = 0;
+  theRingMEs.ClusterPosOnTrack                    = 0;
+  theRingMEs.ClusterPosOffTrack                   = 0;
   theRingMEs.ClusterChargePerCMfromTrack          = 0;
   theRingMEs.ClusterChargePerCMfromOriginOnTrack  = 0;
   theRingMEs.ClusterChargePerCMfromOriginOffTrack = 0;
@@ -481,6 +485,18 @@ void SiStripMonitorTrack::bookRingMEs(DQMStore::IBooker & ibooker , const uint32
   hname = hidmanager.createHistoLayer("Summary_ClusterWidth",name,ring_id,"OffTrack");
   hpar  = "TH1ClusterWidth";
   theRingMEs.ClusterWidthOffTrack = handleBookMEs(ibooker,view,ring_id,hpar,hname);
+
+  //Cluster Position
+  short total_nr_strips = SiStripDetCabling_->nApvPairs(mod_id) * 2 * 128;
+  if (ring_id.find("TEC") != std::string::npos)  total_nr_strips = 3 * 2 * 128;
+
+  hname = hidmanager.createHistoLayer("Summary_ClusterPosition",name,ring_id,"OnTrack");
+  hpar = "TH1ClusterPos";
+  if ( ring_id.find("TIB") != std::string::npos || ring_id.find("TOB") != std::string::npos || (conf_.getParameter<edm::ParameterSet>(hpar.c_str())).getParameter<bool>(view.c_str()) ) theRingMEs.ClusterPosOnTrack = ibooker.book1D(hname, hname, total_nr_strips, 0.5,total_nr_strips+0.5);
+
+  hname = hidmanager.createHistoLayer("Summary_ClusterPosition",name,ring_id,"OffTrack");
+  hpar = "TH1ClusterPos";
+  if ( ring_id.find("TIB") != std::string::npos || ring_id.find("TOB") != std::string::npos || (conf_.getParameter<edm::ParameterSet>(hpar.c_str())).getParameter<bool>(view.c_str()) ) theRingMEs.ClusterPosOffTrack = ibooker.book1D(hname, hname, total_nr_strips, 0.5,total_nr_strips+0.5);
 
   // dQ/dx
   hname = hidmanager.createHistoLayer("Summary_ClusterChargePerCMfromTrack",name,ring_id,"");
@@ -653,7 +669,7 @@ MonitorElement* SiStripMonitorTrack::bookMETrend(DQMStore::IBooker & ibooker , c
 }
 
 //------------------------------------------------------------------------------------------
-void SiStripMonitorTrack::trajectoryStudy(const edm::Ref<std::vector<Trajectory> > traj, const edm::EventSetup& es) {
+void SiStripMonitorTrack::trajectoryStudy(const edm::Ref<std::vector<Trajectory> > traj, const edm::EventSetup& es, bool track_ok) {
   const std::vector<TrajectoryMeasurement> & measurements = traj->measurements();
   for(std::vector<TrajectoryMeasurement>::const_iterator traj_mes_iterator= measurements.begin(), traj_mes_end=measurements.end();
       traj_mes_iterator!=traj_mes_end;++traj_mes_iterator){//loop on measurements
@@ -663,15 +679,16 @@ void SiStripMonitorTrack::trajectoryStudy(const edm::Ref<std::vector<Trajectory>
     TrajectoryStateOnSurface  updatedtsos=traj_mes_iterator->updatedState();
     ConstRecHitPointer ttrh=traj_mes_iterator->recHit();
 
-    if (TkHistoMap_On_ && (numTracks > 0)) {
+ 
+    if (TkHistoMap_On_ ) {
       uint32_t thedetid=ttrh->rawId();
-      if ( thedetid > 369120277-1 ) {
+      if ( SiStripDetId(thedetid).subDetector() >=3 &&  SiStripDetId(thedetid).subDetector() <=6) { //TIB/TID + TOB + TEC only
         if ( (ttrh->getType()==1) )
-          tkhisto_NumMissingHits->add(thedetid,static_cast<float>(1./numTracks));
+          tkhisto_NumMissingHits->add(thedetid,1.);
         if ( (ttrh->getType()==2) )
-          tkhisto_NumberInactiveHits->add(thedetid,static_cast<float>(1./numTracks));
+          tkhisto_NumberInactiveHits->add(thedetid,1.);
         if ( (ttrh->getType()==0) )
-          tkhisto_NumberValidHits->add(thedetid,static_cast<float>(1./numTracks));
+          tkhisto_NumberValidHits->add(thedetid,1.);
       }
     }
 
@@ -695,13 +712,13 @@ void SiStripMonitorTrack::trajectoryStudy(const edm::Ref<std::vector<Trajectory>
       statedirection=monodet->toLocal(gtrkdirup);
       SiStripRecHit2D m = matchedhit->monoHit();
       //      if(statedirection.mag() != 0)	  RecHitInfo<SiStripRecHit2D>(&m,statedirection,trackref,es);
-      if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&m,statedirection,es);
+      if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&m,statedirection,es,track_ok);
       //stereo side
       const GeomDetUnit * stereodet=gdet->stereoDet();
       statedirection=stereodet->toLocal(gtrkdirup);
       SiStripRecHit2D s = matchedhit->stereoHit();
       //      if(statedirection.mag() != 0)	  RecHitInfo<SiStripRecHit2D>(&s,statedirection,trackref,es);
-      if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&s,statedirection,es);
+      if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&s,statedirection,es,track_ok);
     }
     else if(projhit){
       LogTrace("SiStripMonitorTrack")<<"\nProjected recHit found"<< std::endl;
@@ -716,21 +733,21 @@ void SiStripMonitorTrack::trajectoryStudy(const edm::Ref<std::vector<Trajectory>
 	LogTrace("SiStripMonitorTrack")<<"\nProjected recHit found  MONO"<< std::endl;
 	det=gdet->monoDet();
 	statedirection=det->toLocal(gtrkdirup);
-	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es);
+	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es,track_ok);
       }
       else{
 	LogTrace("SiStripMonitorTrack")<<"\nProjected recHit found STEREO"<< std::endl;
 	//stereo side
 	det=gdet->stereoDet();
 	statedirection=det->toLocal(gtrkdirup);
-	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es);
+	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es,track_ok);
       }
     }else if (hit2D){
       statedirection=updatedtsos.localMomentum();
-      if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(hit2D,statedirection,es);
+      if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(hit2D,statedirection,es,track_ok);
     } else if (hit1D) {
       statedirection=updatedtsos.localMomentum();
-      if(statedirection.mag()) RecHitInfo<SiStripRecHit1D>(hit1D,statedirection,es);
+      if(statedirection.mag()) RecHitInfo<SiStripRecHit1D>(hit1D,statedirection,es,track_ok);
     } else {
       LogDebug ("SiStripMonitorTrack")
 	<< " LocalMomentum: "<<statedirection
@@ -746,7 +763,8 @@ void SiStripMonitorTrack::hitStudy(const edm::EventSetup& es,
 				   const SiStripMatchedRecHit2D*   matchedhit,
 				   const SiStripRecHit2D*          hit2D,
 				   const SiStripRecHit1D*          hit1D,
-				   LocalVector localMomentum
+				         LocalVector               localMomentum,
+				   const bool                      track_ok
 				   ) {
   LocalVector statedirection;
   if(matchedhit){     // type=Matched;
@@ -760,13 +778,13 @@ void SiStripMonitorTrack::hitStudy(const edm::EventSetup& es,
     const GeomDetUnit * monodet=gdet->monoDet();
     statedirection=monodet->toLocal(gtrkdirup);
     SiStripRecHit2D m = matchedhit->monoHit();
-    if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&m,statedirection,es);
+    if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&m,statedirection,es,track_ok);
 
     //stereo side
     const GeomDetUnit * stereodet=gdet->stereoDet();
     statedirection=stereodet->toLocal(gtrkdirup);
     SiStripRecHit2D s = matchedhit->stereoHit();
-    if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&s,statedirection,es);
+    if(statedirection.mag())	  RecHitInfo<SiStripRecHit2D>(&s,statedirection,es,track_ok);
   }
   else if(projhit){    // type=Projected;
       LogTrace("SiStripMonitorTrack")<<"\nProjected recHit found"<< std::endl;      
@@ -782,21 +800,21 @@ void SiStripMonitorTrack::hitStudy(const edm::EventSetup& es,
 	LogTrace("SiStripMonitorTrack")<<"\nProjected recHit found  MONO"<< std::endl;
 	det=gdet->monoDet();
 	statedirection=det->toLocal(gtrkdirup);
-	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es);
+	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es,track_ok);
       }
       else{
 	LogTrace("SiStripMonitorTrack")<<"\nProjected recHit found STEREO"<< std::endl;
 	//stereo side
 	det=gdet->stereoDet();
 	statedirection=det->toLocal(gtrkdirup);
-	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es);
+	if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(&(originalhit),statedirection,es,track_ok);
       }
   } else if (hit2D){ // type=2D
     statedirection=localMomentum;
-    if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(hit2D,statedirection,es);
+    if(statedirection.mag()) RecHitInfo<SiStripRecHit2D>(hit2D,statedirection,es,track_ok);
   } else if (hit1D) { // type=1D
     statedirection=localMomentum;
-    if(statedirection.mag()) RecHitInfo<SiStripRecHit1D>(hit1D,statedirection,es);
+    if(statedirection.mag()) RecHitInfo<SiStripRecHit1D>(hit1D,statedirection,es,track_ok);
   } else {
     LogDebug ("SiStripMonitorTrack")
       << " LocalMomentum: "<<statedirection
@@ -833,6 +851,16 @@ using namespace reco;
     }
   }
 }
+
+//------------------------------------------------------------------------
+// Should return true if the track is good, false if it should be discarded.
+bool SiStripMonitorTrack::trackFilter(const reco::Track& track) {
+  if (track.pt() < 0.8) return false;
+  if (track.p()  < 2.0) return false;
+  if (track.hitPattern().numberOfValidTrackerHits()  <= 6) return false;
+  if (track.normalizedChi2() > 10.0) return false;
+  return true;
+}
 //------------------------------------------------------------------------
 void SiStripMonitorTrack::trackStudyFromTrack(edm::Handle<reco::TrackCollection > trackCollectionHandle, const edm::EventSetup& es) {
 
@@ -840,26 +868,26 @@ void SiStripMonitorTrack::trackStudyFromTrack(edm::Handle<reco::TrackCollection 
   //  es.get<TransientTrackRecord>().get("TransientTrackBuilder",builder);
   //  const TransientTrackBuilder* transientTrackBuilder = builder.product();
   
-  numTracks = trackCollectionHandle->size();    
+  //numTracks = trackCollectionHandle->size();    
   reco::TrackCollection trackCollection = *trackCollectionHandle;
   for (reco::TrackCollection::const_iterator track = trackCollection.begin(), etrack = trackCollection.end(); 
        track!=etrack; ++track) {
     
+    bool track_ok = trackFilter(*track);
     //    const reco::TransientTrack transientTrack = transientTrackBuilder->build(track);
-    
      
     for (trackingRecHit_iterator hit = track->recHitsBegin(), ehit = track->recHitsEnd();
 	 hit!=ehit; ++hit) {
 
-      if (TkHistoMap_On_ && (numTracks > 0)) {
+      if (TkHistoMap_On_ ) {
         uint32_t thedetid=(*hit)->rawId();
-        if ( thedetid > 369120277-1 ) {
+        if ( SiStripDetId(thedetid).subDetector() >=3 &&  SiStripDetId(thedetid).subDetector() <=6) { //TIB/TID + TOB + TEC only
           if ( ((*hit)->getType()==1) )
-            tkhisto_NumMissingHits->add(thedetid,static_cast<float>(1./numTracks));
+            tkhisto_NumMissingHits->add(thedetid,1.);
           if ( ((*hit)->getType()==2) )
-            tkhisto_NumberInactiveHits->add(thedetid,static_cast<float>(1./numTracks));
+            tkhisto_NumberInactiveHits->add(thedetid,1.);
           if ( ((*hit)->getType()==0) )
-            tkhisto_NumberValidHits->add(thedetid,static_cast<float>(1./numTracks));
+            tkhisto_NumberValidHits->add(thedetid,1.);
         }
       }
 
@@ -876,7 +904,7 @@ void SiStripMonitorTrack::trackStudyFromTrack(edm::Handle<reco::TrackCollection 
       //      reco::TrajectoryStateOnSurface stateOnSurface = transientTrack->stateOnSurface(globalPoint);
 
       LocalVector localMomentum;
-      hitStudy(es,projhit,matchedhit,hit2D,hit1D,localMomentum);
+      hitStudy(es,projhit,matchedhit,hit2D,hit1D,localMomentum,track_ok);
     }
     
     // hit pattern of the track
@@ -934,12 +962,13 @@ void SiStripMonitorTrack::trackStudyFromTrajectory(edm::Handle<TrajTrackAssociat
       //      <<"\n\t\touter PT "<< trackref->outerPt()<<std::endl;
 
     //    trajectoryStudy(traj_iterator,trackref,es);
-    trajectoryStudy(traj_iterator,es);
+    bool track_ok = trackFilter(*(it->val));
+    trajectoryStudy(traj_iterator,es,track_ok);
 
   }
 }
 //------------------------------------------------------------------------
-template <class T> void SiStripMonitorTrack::RecHitInfo(const T* tkrecHit, LocalVector LV, const edm::EventSetup& es){
+template <class T> void SiStripMonitorTrack::RecHitInfo(const T* tkrecHit, LocalVector LV, const edm::EventSetup& es, bool track_ok){
 
     if(!tkrecHit->isValid()){
       LogTrace("SiStripMonitorTrack") <<"\t\t Invalid Hit " << std::endl;
@@ -966,7 +995,7 @@ template <class T> void SiStripMonitorTrack::RecHitInfo(const T* tkrecHit, Local
       SiStripClusterInfo SiStripClusterInfo_(*SiStripCluster_,es,detid);
 
       const Det2MEs MEs = findMEs(tTopo, detid);
-      if (clusterInfos(&SiStripClusterInfo_,detid, OnTrack, LV, MEs))
+      if (clusterInfos(&SiStripClusterInfo_,detid, OnTrack, track_ok, LV, MEs))
       {
         vPSiStripCluster.insert(SiStripCluster_);
       }
@@ -1004,7 +1033,7 @@ void SiStripMonitorTrack::AllClusters(const edm::Event& ev, const edm::EventSetu
 
         if (vPSiStripCluster.find(&*ClusIter) == vPSiStripCluster.end()) {
           SiStripClusterInfo SiStripClusterInfo_(*ClusIter,es,detid);
-          clusterInfos(&SiStripClusterInfo_,detid,OffTrack,LV,MEs);
+          clusterInfos(&SiStripClusterInfo_,detid,OffTrack, /*track_ok*/ false,LV,MEs);
         }
       }
     }
@@ -1047,7 +1076,7 @@ SiStripMonitorTrack::Det2MEs SiStripMonitorTrack::findMEs(const TrackerTopology*
 
 //------------------------------------------------------------------------
 #include "DataFormats/SiStripCluster/interface/SiStripClusterTools.h"
-bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32_t detid, enum ClusterFlags flag, const LocalVector LV, const Det2MEs& MEs)
+bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32_t detid, enum ClusterFlags flag, bool track_ok, const LocalVector LV, const Det2MEs& MEs)
 {
 
   if (cluster==NULL) return false;
@@ -1084,11 +1113,11 @@ bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32
 
   if (TkHistoMap_On_ && (flag == OnTrack)) {
       uint32_t adet=cluster->detId();
-      tkhisto_ClChPerCMfromTrack->fill(adet,dQdx_fromTrack);
+      if(track_ok) tkhisto_ClChPerCMfromTrack->fill(adet,dQdx_fromTrack);
   }
   if (clchCMoriginTkHmap_On_ && (flag == OffTrack)){
     uint32_t adet=cluster->detId();
-    tkhisto_ClChPerCMfromOrigin->fill(adet,dQdx_fromOrigin);
+    if(track_ok) tkhisto_ClChPerCMfromOrigin->fill(adet,dQdx_fromOrigin);
   }
 
   if(flag==OnTrack){
@@ -1102,8 +1131,8 @@ bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32
       fillME(MEs.iLayer->ClusterNoiseOnTrack, noise);
       fillME(MEs.iLayer->ClusterWidthOnTrack, width);
       fillME(MEs.iLayer->ClusterPosOnTrack, position);
-      fillME(MEs.iLayer->ClusterChargePerCMfromTrack, dQdx_fromTrack);
-      fillME(MEs.iLayer->ClusterChargePerCMfromOriginOnTrack, dQdx_fromOrigin);
+      if(track_ok) fillME(MEs.iLayer->ClusterChargePerCMfromTrack, dQdx_fromTrack);
+      if(track_ok) fillME(MEs.iLayer->ClusterChargePerCMfromOriginOnTrack, dQdx_fromOrigin);
     }
     // ringMEs
     if (MEs.iRing != nullptr) {
@@ -1113,15 +1142,16 @@ bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32
       fillME(MEs.iRing->ClusterChargeOnTrack, charge);
       fillME(MEs.iRing->ClusterNoiseOnTrack, noise);
       fillME(MEs.iRing->ClusterWidthOnTrack, width);
-      fillME(MEs.iRing->ClusterChargePerCMfromTrack, dQdx_fromTrack);
-      fillME(MEs.iRing->ClusterChargePerCMfromOriginOnTrack, dQdx_fromOrigin);
+      fillME(MEs.iRing->ClusterPosOnTrack, position);
+      if(track_ok) fillME(MEs.iRing->ClusterChargePerCMfromTrack, dQdx_fromTrack);
+      if(track_ok) fillME(MEs.iRing->ClusterChargePerCMfromOriginOnTrack, dQdx_fromOrigin);
     }
     // subdetMEs
     if(MEs.iSubdet != nullptr){
       fillME(MEs.iSubdet->ClusterChargeOnTrack,charge);
       if(noise > 0.0) fillME(MEs.iSubdet->ClusterStoNCorrOnTrack,StoN*cosRZ);
-      fillME(MEs.iSubdet->ClusterChargePerCMfromTrack,dQdx_fromTrack);
-      fillME(MEs.iSubdet->ClusterChargePerCMfromOriginOnTrack,dQdx_fromOrigin);
+      if(track_ok) fillME(MEs.iSubdet->ClusterChargePerCMfromTrack,dQdx_fromTrack);
+      if(track_ok) fillME(MEs.iSubdet->ClusterChargePerCMfromOriginOnTrack,dQdx_fromOrigin);
     }
     //******** TkHistoMaps
     if (TkHistoMap_On_) {
@@ -1147,8 +1177,8 @@ bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32
         fillME(iModME->second.ClusterWidth ,width);
         fillME(iModME->second.ClusterPos   ,position);
 
-        fillME(iModME->second.ClusterChargePerCMfromTrack,  dQdx_fromTrack);
-        fillME(iModME->second.ClusterChargePerCMfromOrigin, dQdx_fromOrigin);
+        if(track_ok) fillME(iModME->second.ClusterChargePerCMfromTrack,  dQdx_fromTrack);
+        if(track_ok) fillME(iModME->second.ClusterChargePerCMfromOrigin, dQdx_fromOrigin);
 
         //fill the PGV histo
         float PGVmax = cluster->maxCharge();
@@ -1188,6 +1218,7 @@ bool SiStripMonitorTrack::clusterInfos(SiStripClusterInfo* cluster, const uint32
       fillME(MEs.iRing->ClusterChargeOffTrack, charge);
       fillME(MEs.iRing->ClusterNoiseOffTrack, noise);
       fillME(MEs.iRing->ClusterWidthOffTrack, width);
+      fillME(MEs.iRing->ClusterPosOffTrack, position);
       fillME(MEs.iRing->ClusterChargePerCMfromOriginOffTrack, dQdx_fromOrigin);
     }
     // subdetMEs

@@ -120,7 +120,7 @@ namespace {
     
     ~ClusterFiller() { printStat();}
     
-    void fill(StripClusterizerAlgorithm::output_t::FastFiller & record) override;
+    void fill(StripClusterizerAlgorithm::output_t::TSFastFiller & record) override;
     
   private:
     
@@ -222,7 +222,7 @@ class SiStripClusterizerFromRaw final : public edm::stream::EDProducer<>  {
     
     if(onDemand) assert(output->onDemand());
 
-    output->reserve(15000,12*10000);
+    output->reserve(15000,24*10000);
 
 
     if (!onDemand) {
@@ -283,7 +283,7 @@ void SiStripClusterizerFromRaw::run(const FEDRawDataCollection& rawColl,
   // loop over good det in cabling
   for ( auto idet : clusterizer_->allDetIds()) {
 
-    StripClusterizerAlgorithm::output_t::FastFiller record(output, idet);	
+    StripClusterizerAlgorithm::output_t::TSFastFiller record(output, idet);	
     
     filler.fill(record);
     
@@ -292,7 +292,7 @@ void SiStripClusterizerFromRaw::run(const FEDRawDataCollection& rawColl,
   } // end loop over dets
 }
 
-void ClusterFiller::fill(StripClusterizerAlgorithm::output_t::FastFiller & record) {
+void ClusterFiller::fill(StripClusterizerAlgorithm::output_t::TSFastFiller & record) {
 try { // edmNew::CapacityExaustedException
   incReady();
 

@@ -38,6 +38,7 @@
 #include "Alignment/LaserAlignment/interface/TsosVectorCollection.h"
 #include "TrackingTools/PatternTools/interface/TrajTrackAssociation.h"
 #include "DataFormats/BeamSpot/interface/BeamSpot.h"
+#include "Alignment/MillePedeAlignmentAlgorithm/interface/MillePedeFileReader.h"
 
 /*** Geometry ***/
 #include "Geometry/TrackingGeometryAligner/interface/GeometryAligner.h"
@@ -455,7 +456,7 @@ void PCLTrackerAlProducer
 
   // Create the geometries from the ideal geometries (first time only)
   //std::shared_ptr<TrackingGeometry> theTrackerGeometry;
-  createGeometries(setup);
+  createGeometries(setup, tTopo);
 
   applyAlignmentsToDB(setup);
   createAlignables(tTopo);
@@ -495,7 +496,7 @@ void PCLTrackerAlProducer
 
 //_____________________________________________________________________________
 void PCLTrackerAlProducer
-::createGeometries(const edm::EventSetup& setup)
+::createGeometries(const edm::EventSetup& setup, const TrackerTopology* tTopo)
 {
   if (doTracker_) {
     edm::ESHandle<GeometricDet> geometricDet;
@@ -507,7 +508,7 @@ void PCLTrackerAlProducer
     setup.get<PTrackerParametersRcd>().get( ptp );
 
     theTrackerGeometry = boost::shared_ptr<TrackerGeometry>(
-        trackerBuilder.build(&(*geometricDet), *ptp )
+        trackerBuilder.build(&(*geometricDet), *ptp, tTopo )
     );
   }
 
@@ -985,7 +986,18 @@ void PCLTrackerAlProducer
                             << "Terminating algorithm.";
   theAlignmentAlgo->terminate();
 
-  storeAlignmentsToDB();
+  if (saveToDB_ || saveApeToDB_ || saveDeformationsToDB_) {
+    // if this is not the harvesting step there is no reason to look for the PEDE log and res files and to call the storeAlignmentsToDB method
+    MillePedeFileReader mpReader(theParameterSet.getParameter<edm::ParameterSet>("MillePedeFileReader"));
+    mpReader.read();
+    if (mpReader.storeAlignments()) {
+      storeAlignmentsToDB();
+    }
+  } else {
+    edm::LogInfo("Alignment") << "@SUB=PCLTrackerAlProducer::finish"
+			      << "no payload to be stored!";
+
+  }
 }
 
 //_____________________________________________________________________________

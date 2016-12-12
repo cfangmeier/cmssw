@@ -46,6 +46,8 @@ HLTMuonMatchAndPlot::HLTMuonMatchAndPlot(const ParameterSet & pset,
   targetMuonSelector_(targetParams_.getUntrackedParameter<string>("recoCuts", "")),
   targetZ0Cut_(targetParams_.getUntrackedParameter<double>("z0Cut",0.)),
   targetD0Cut_(targetParams_.getUntrackedParameter<double>("d0Cut",0.)),
+  targetptCutZ_(targetParams_.getUntrackedParameter<double>("ptCut_Z",20.)),
+  targetptCutJpsi_(targetParams_.getUntrackedParameter<double>("ptCut_Jpsi",20.)),
   probeMuonSelector_(probeParams_.getUntrackedParameter<string>("recoCuts", "")),
   probeZ0Cut_(probeParams_.getUntrackedParameter<double>("z0Cut",0.)),
   probeD0Cut_(probeParams_.getUntrackedParameter<double>("d0Cut",0.)),
@@ -281,11 +283,11 @@ void HLTMuonMatchAndPlot::analyze(Handle<MuonCollection>   & allMuons,
     if(matches[i] >= targetMuons.size()) continue;
     for (size_t k = 0; k < targetMuons.size(); k++) {
       if(k == i) continue;
-      if(muon.pt() < 20.0) continue;
       Muon & theProbe = targetMuons[k];
       if (muon.charge() != theProbe.charge() && !pairalreadyconsidered) {
         double mass = (muon.p4() + theProbe.p4()).M();
         if(mass > 60 && mass < 120) {
+          if(muon.pt() < targetptCutZ_) continue;
           hists_["massVsEtaZ_denom"]->Fill(theProbe.eta());
           hists_["massVsPtZ_denom"]->Fill(theProbe.pt());
           hists_["massVsVertexZ_denom"]->Fill(vertices->size());
@@ -297,6 +299,7 @@ void HLTMuonMatchAndPlot::analyze(Handle<MuonCollection>   & allMuons,
           pairalreadyconsidered = true;
         }
         if(mass > 1 && mass < 4) {
+          if(muon.pt() < targetptCutJpsi_) continue;
           hists_["massVsEtaJpsi_denom"]->Fill(theProbe.eta());
           hists_["massVsPtJpsi_denom"]->Fill(theProbe.pt());
           hists_["massVsVertexJpsi_denom"]->Fill(vertices->size());
@@ -454,17 +457,15 @@ HLTMuonMatchAndPlot::selectedMuons(const MuonCollection & allMuons,
   if (!hasRecoCuts)
     return MuonCollection();
 
-  MuonCollection reducedMuons(allMuons);
-  MuonCollection::iterator iter = reducedMuons.begin();
-  while (iter != reducedMuons.end()) {
+  MuonCollection reducedMuons;
+  for (auto const& mu : allMuons){
     const Track * track = 0;
-    if (iter->isTrackerMuon()) track = & * iter->innerTrack();
-    else if (iter->isStandAloneMuon()) track = & * iter->outerTrack();
-    if (track && selector(* iter) &&
+    if (mu.isTrackerMuon()) track = & * mu.innerTrack();
+    else if (mu.isStandAloneMuon()) track = & * mu.outerTrack();
+    if (track && selector(mu) &&
         fabs(track->dxy(beamSpot.position())) < d0Cut &&
         fabs(track->dz(beamSpot.position())) < z0Cut)
-      ++iter;
-    else reducedMuons.erase(iter);
+      reducedMuons.push_back(mu);
   }
 
   return reducedMuons;

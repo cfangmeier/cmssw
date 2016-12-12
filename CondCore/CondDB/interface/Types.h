@@ -19,14 +19,12 @@
 
 namespace cond {
 
-  // to be removed after the transition to new DB
-  typedef enum { UNKNOWN_DB=0, COND_DB, ORA_DB } BackendType;
-  static constexpr BackendType DEFAULT_DB = COND_DB;
-  // for the validation of migrated data
-  typedef enum { ERROR=0, MIGRATED, VALIDATED } MigrationStatus;
-  static const std::vector<std::string> validationStatusText = { "Error",
-								 "Migrated",
-								 "Validated" };
+  struct UserLogInfo{
+    std::string provenance;
+    std::string usertext;
+  };
+
+
 
   typedef enum { 
     SYNCH_ANY = 0,
@@ -138,10 +136,12 @@ namespace cond {
       return std::get<2>(m_data);
     }
     std::size_t hashvalue()const{
-      // taken from TagMetadata existing implementation. 
-      // Is it correct ordering by tag? Tags are not unique in a GT, while record+label are...
+      // Derived from CondDB v1 TagMetadata implementation. 
+      // Unique Keys constructed with Record and Labels - allowing for multiple references of the same Tag in a GT
       boost::hash<std::string> hasher;
-      std::size_t result=hasher(tagName());
+      std::string key = recordName();
+      if( !recordLabel().empty() ) key = key +"_"+recordLabel();
+      std::size_t result=hasher(key);
       return result;
     }
     bool operator<(const GTEntry_t& toCompare ) const {

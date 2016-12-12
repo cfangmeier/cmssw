@@ -37,15 +37,15 @@ void ConstCastAwayChecker::checkPreStmt(const clang::ExplicitCastExpr *CE,
 	clang::QualType ToTy = Ctx.getCanonicalType(CE->getType());
 
 	if ( support::isConst( OrigTy ) && ! support::isConst(ToTy) ) {
-		if ( clang::ento::ExplodedNode *errorNode = C.generateSink()) {
+		if ( clang::ento::ExplodedNode *errorNode = C.generateErrorNode()) {
 			if (!BT)
 				BT.reset(new clang::ento::BugType(this,"const cast away","ThreadSafety"));
-			clang::ento::BugReport *R = new clang::ento::BugReport(*BT, 
+			std::unique_ptr<clang::ento::BugReport> R = llvm::make_unique<clang::ento::BugReport>(*BT, 
 					"const qualifier was removed via a cast, this may result in thread-unsafe code.", errorNode);
 			R->addRange(CE->getSourceRange());
 		   	if ( ! m_exception.reportConstCastAway( *R, C ) )
 				return;
-			C.emitReport(R);
+			C.emitReport(std::move(R));
 		}
 	}
 }

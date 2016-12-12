@@ -33,8 +33,10 @@
 #include "FWCore/Utilities/interface/Exception.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
 
+#include "DataFormats/L1TMuon/interface/RegionalMuonCandFwd.h"
 #include "DataFormats/L1TMuon/interface/RegionalMuonCand.h"
-#include "DataFormats/L1TMuon/interface/GMTInputCaloSum.h"
+#include "DataFormats/L1TMuon/interface/MuonCaloSumFwd.h"
+#include "DataFormats/L1TMuon/interface/MuonCaloSum.h"
 
 #include "DataFormats/HepMCCandidate/interface/GenParticle.h"
 
@@ -54,14 +56,14 @@ class L1TMicroGMTInputProducerFromGen : public edm::EDProducer {
       static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
 
    private:
-      virtual void beginJob() ;
-      virtual void produce(edm::Event&, const edm::EventSetup&);
-      virtual void endJob() ;
+      virtual void beginJob() override ;
+      virtual void produce(edm::Event&, const edm::EventSetup&) override ;
+      virtual void endJob() override ;
 
-      virtual void beginRun(edm::Run&, edm::EventSetup const&);
-      virtual void endRun(edm::Run&, edm::EventSetup const&);
-      virtual void beginLuminosityBlock(edm::LuminosityBlock&, edm::EventSetup const&);
-      virtual void endLuminosityBlock(edm::LuminosityBlock&, edm::EventSetup const&);
+      virtual void beginRun(const edm::Run&, edm::EventSetup const&) override ;
+      virtual void endRun(const edm::Run&, edm::EventSetup const&) override ;
+      virtual void beginLuminosityBlock(const edm::LuminosityBlock&, edm::EventSetup const&) override ;
+      virtual void endLuminosityBlock(const edm::LuminosityBlock&, edm::EventSetup const&) override ;
 
       static bool compareMuons(const RegionalMuonCand&, const RegionalMuonCand&);
 
@@ -93,7 +95,7 @@ L1TMicroGMTInputProducerFromGen::L1TMicroGMTInputProducerFromGen(const edm::Para
   produces<RegionalMuonCandBxCollection>("BarrelTFMuons");
   produces<RegionalMuonCandBxCollection>("OverlapTFMuons");
   produces<RegionalMuonCandBxCollection>("ForwardTFMuons");
-  produces<GMTInputCaloSumBxCollection>("TriggerTowerSums");
+  produces<MuonCaloSumBxCollection>("TriggerTowerSums");
 }
 
 
@@ -123,7 +125,7 @@ L1TMicroGMTInputProducerFromGen::produce(edm::Event& iEvent, const edm::EventSet
   std::auto_ptr<RegionalMuonCandBxCollection> barrelMuons (new RegionalMuonCandBxCollection());
   std::auto_ptr<RegionalMuonCandBxCollection> overlapMuons (new RegionalMuonCandBxCollection());
   std::auto_ptr<RegionalMuonCandBxCollection> endcapMuons (new RegionalMuonCandBxCollection());
-  std::auto_ptr<GMTInputCaloSumBxCollection> towerSums (new GMTInputCaloSumBxCollection());
+  std::auto_ptr<MuonCaloSumBxCollection> towerSums (new MuonCaloSumBxCollection());
 
   std::vector<RegionalMuonCand> bmMuons;
   std::vector<RegionalMuonCand> omMuons;
@@ -146,7 +148,7 @@ L1TMicroGMTInputProducerFromGen::produce(edm::Event& iEvent, const edm::EventSet
   }
 
   RegionalMuonCand mu;
-  GMTInputCaloSum tSum;
+  MuonCaloSum tSum;
   // alternative scale (using full phi bit-width): 163.4521265553765f;
   const float phiToInt = 91.67324722093171f;
   // alternative scale: 100.0f;
@@ -240,7 +242,7 @@ L1TMicroGMTInputProducerFromGen::produce(edm::Event& iEvent, const edm::EventSet
     int energy = int(m_rnd.Gaus(12, 6));
     if (energy < 0) energy = 0;
     if (energy > 31) energy = 31;
-    GMTInputCaloSum sum(energy, i/28, i%28, i);
+    MuonCaloSum sum(energy, i/28, i%28, i);
     towerSums->push_back(0, sum);
   }
 
@@ -265,25 +267,25 @@ L1TMicroGMTInputProducerFromGen::endJob() {
 
 // ------------ method called when starting to processes a run  ------------
 void
-L1TMicroGMTInputProducerFromGen::beginRun(edm::Run&, edm::EventSetup const&)
+L1TMicroGMTInputProducerFromGen::beginRun(const edm::Run&, edm::EventSetup const&)
 {
 }
 
 // ------------ method called when ending the processing of a run  ------------
 void
-L1TMicroGMTInputProducerFromGen::endRun(edm::Run&, edm::EventSetup const&)
+L1TMicroGMTInputProducerFromGen::endRun(const edm::Run&, edm::EventSetup const&)
 {
 }
 
 // ------------ method called when starting to processes a luminosity block  ------------
 void
-L1TMicroGMTInputProducerFromGen::beginLuminosityBlock(edm::LuminosityBlock&, edm::EventSetup const&)
+L1TMicroGMTInputProducerFromGen::beginLuminosityBlock(const edm::LuminosityBlock&, edm::EventSetup const&)
 {
 }
 
 // ------------ method called when ending the processing of a luminosity block  ------------
 void
-L1TMicroGMTInputProducerFromGen::endLuminosityBlock(edm::LuminosityBlock&, edm::EventSetup const&)
+L1TMicroGMTInputProducerFromGen::endLuminosityBlock(const edm::LuminosityBlock&, edm::EventSetup const&)
 {
 }
 

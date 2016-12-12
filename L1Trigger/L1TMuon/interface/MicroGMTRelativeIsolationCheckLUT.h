@@ -5,13 +5,12 @@
 #include "MicroGMTConfiguration.h"
 
 namespace l1t {
-  class MicroGMTRelativeIsolationCheckLUT : MicroGMTLUT {
+  class MicroGMTRelativeIsolationCheckLUT : public MicroGMTLUT {
     public: 
-      MicroGMTRelativeIsolationCheckLUT (const edm::ParameterSet& iConfig, const std::string& setName);
-      MicroGMTRelativeIsolationCheckLUT (const edm::ParameterSet& iConfig, const char* setName);
-      virtual ~MicroGMTRelativeIsolationCheckLUT ();
-
-
+      MicroGMTRelativeIsolationCheckLUT() {};
+      explicit MicroGMTRelativeIsolationCheckLUT(const std::string& fname);
+      explicit MicroGMTRelativeIsolationCheckLUT(l1t::LUT* lut);
+      virtual ~MicroGMTRelativeIsolationCheckLUT() {};
 
       // returns the index corresponding to the calo tower sum 
       int lookup(int energySum, int pt) const;
@@ -19,8 +18,6 @@ namespace l1t {
       int hashInput(int energySum, int pt) const;
       void unHashInput(int input, int& energySum, int& pt) const;
     private:
-      void getParameters(const edm::ParameterSet& iConfig, const char* setName);
-
       int m_ptMask; 
       int m_energySumMask;
       int m_energySumInWidth;

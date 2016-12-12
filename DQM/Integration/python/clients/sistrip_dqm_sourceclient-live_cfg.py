@@ -204,7 +204,7 @@ process.hltLevel1GTSeed.L1SeedsLogicalExpression = cms.string('NOT (36 OR 37 OR 
 # HLT trigger selection (HLT_ZeroBias)
 # modified for 0 Tesla HLT menu (no ZeroBias_*)
 process.load('HLTrigger.HLTfilters.hltHighLevel_cfi')
-process.hltHighLevel.HLTPaths = cms.vstring( 'HLT_ZeroBias_*' , 'HLT_ZeroBias1_*' , 'HLT_PAZeroBias_*' , 'HLT_PAZeroBias1_*' )
+process.hltHighLevel.HLTPaths = cms.vstring( 'HLT_ZeroBias_*' , 'HLT_ZeroBias1_*' , 'HLT_PAZeroBias_*' , 'HLT_PAZeroBias1_*', 'HLT_PAL1MinimumBiasHF_OR_SinglePixelTrack_*')
 process.hltHighLevel.andOr = cms.bool(True)
 process.hltHighLevel.throw =  cms.bool(False)
 
@@ -288,7 +288,10 @@ if (process.runType.getRunType() == process.runType.pp_run or process.runType.ge
             'HLT_L1*',
             'HLT_Jet*',
             'HLT_Physics*',
-            'HLT_ZeroBias*'
+            'HLT_ZeroBias*',
+            'HLT_PAL1*',
+            'HLT_PAZeroBias*',
+            'HLT_PAAK*'
             )
 
     process.DQMStore.referenceFileName = '/dqmdata/dqm/reference/sistrip_reference_pp.root'
@@ -545,6 +548,9 @@ if (process.runType.getRunType() == process.runType.hi_run):
     # Sources for HI 
     process.load("Configuration.StandardSequences.RawToDigi_Repacked_cff")
     process.SiStripBaselineValidator.srcProcessedRawDigi =  cms.InputTag('siStripVRDigis','VirginRaw')
+    process.SiStripMonitorTrack_hi.TrackProducer = "hiSelectedTracks"
+    process.TrackMon_hi.TrackProducer = "hiSelectedTracks"
+
     process.SiStripSources_TrkReco   = cms.Sequence(process.SiStripMonitorTrack_hi*process.TrackMon_hi)
     # Client for HI
     ### STRIP
@@ -553,6 +559,7 @@ if (process.runType.getRunType() == process.runType.hi_run):
     process.SiStripAnalyserHI.TkMapCreationFrequency  = -1
     process.SiStripAnalyserHI.ShiftReportFrequency = -1
     process.SiStripAnalyserHI.StaticUpdateFrequency = 5
+    process.SiStripAnalyserHI.MonitorSiStripBackPlaneCorrection = cms.bool(False)
     process.SiStripClients  = cms.Sequence(process.SiStripAnalyserHI)
     ### TRACKING
     process.load("DQM.TrackingMonitorClient.TrackingClientConfigP5_HeavyIons_cff")
@@ -561,10 +568,21 @@ if (process.runType.getRunType() == process.runType.hi_run):
     process.TrackingAnalyserHI.RawDataTag            = cms.untracked.InputTag("rawDataCollector")
     process.TrackingClient = cms.Sequence( process.TrackingAnalyserHI )
 
+    process.load("RecoLocalTracker.Configuration.RecoLocalTrackerHeavyIons_cff")
+
     # Reco for HI collisions
-    process.load("Configuration.StandardSequences.ReconstructionHeavyIons_cff")
-    process.RecoForDQM_LocalReco = cms.Sequence(process.siPixelDigis*process.siStripDigis*process.siStripVRDigis*process.gtDigis*process.trackerlocalreco)
-    process.RecoForDQM_TrkReco = cms.Sequence(process.offlineBeamSpot*process.heavyIonTracking)
+    process.load("RecoHI.HiTracking.LowPtTracking_PbPb_cff")
+    process.PixelLayerTriplets.BPix.HitProducer = cms.string('siPixelRecHitsPreSplitting')
+    process.PixelLayerTriplets.FPix.HitProducer = cms.string('siPixelRecHitsPreSplitting')
+    process.hiPixel3ProtoTracks.FilterPSet.siPixelRecHits = cms.InputTag("siPixelRecHitsPreSplitting")
+    process.hiPixel3ProtoTracks.RegionFactoryPSet.RegionPSet.siPixelRecHits = cms.InputTag("siPixelRecHitsPreSplitting")
+    process.hiPixel3PrimTracks.FilterPSet.clusterShapeCacheSrc = cms.InputTag("siPixelClusterShapeCachePreSplitting")
+    process.hiPrimTrackCandidates.MeasurementTrackerEvent = cms.InputTag("MeasurementTrackerEventPreSplitting")
+    process.hiGlobalPrimTracks.MeasurementTrackerEvent = cms.InputTag("MeasurementTrackerEventPreSplitting")
+    process.multFilter.inputTag = cms.InputTag("siPixelClustersPreSplitting")
+    process.SiStripMonitorTrack_hi.TrackProducer = cms.string('hiSelectedTracks')
+    process.RecoForDQM_LocalReco = cms.Sequence(process.siPixelDigis*process.siStripDigis*process.siStripVRDigis*process.gtDigis*process.trackerlocalreco*process.pixeltrackerlocalreco)
+    process.RecoForDQM_TrkReco = cms.Sequence(process.offlineBeamSpot*process.MeasurementTrackerEventPreSplitting*process.siPixelClusterShapeCachePreSplitting*process.hiBasicTracking*process.hiSelectedTracks)
     
     process.p = cms.Path(process.scalersRawToDigi*
                          process.APVPhases*
@@ -579,11 +597,10 @@ if (process.runType.getRunType() == process.runType.hi_run):
                          process.SiStripSources_TrkReco*
                          process.multFilter*
                          process.SiStripBaselineValidator*
-                         process.TrackingClients
+                         process.TrackingClient
                          )
     
 
 ### process customizations included here
 from DQM.Integration.config.online_customizations_cfi import *
 process = customise(process)
-

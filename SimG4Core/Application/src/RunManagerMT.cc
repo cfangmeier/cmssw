@@ -5,9 +5,11 @@
 #include "SimG4Core/Application/interface/SimTrackManager.h"
 #include "SimG4Core/Application/interface/G4SimEvent.h"
 #include "SimG4Core/Application/interface/ParametrisedEMPhysics.h"
+#include "SimG4Core/Application/interface/CustomUIsession.h"
 
 #include "SimG4Core/Geometry/interface/DDDWorld.h"
 #include "SimG4Core/Geometry/interface/G4LogicalVolumeToDDLogicalPartMap.h"
+#include "SimG4Core/Physics/interface/DDG4ProductionCuts.h"
 
 #include "SimG4Core/SensitiveDetector/interface/AttachSD.h"
 
@@ -19,7 +21,6 @@
 
 #include "MagneticField/Engine/interface/MagneticField.h"
 
-#include "SimG4Core/Notification/interface/SimG4Exception.h"
 #include "SimG4Core/Notification/interface/BeginOfJob.h"
 #include "SimG4Core/Notification/interface/CurrentG4Track.h"
 #include "SimG4Core/Application/interface/G4RegionReporter.h"
@@ -69,15 +70,11 @@ RunManagerMT::RunManagerMT(edm::ParameterSet const & p):
       m_pRunAction(p.getParameter<edm::ParameterSet>("RunAction")),
       m_g4overlap(p.getParameter<edm::ParameterSet>("G4CheckOverlap")),
       m_G4Commands(p.getParameter<std::vector<std::string> >("G4Commands")),
-      m_fieldBuilder(nullptr)
+      m_p(p),m_fieldBuilder(nullptr)
 {    
   m_currentRun = nullptr;
-  G4RunManagerKernel *kernel = G4MTRunManagerKernel::GetRunManagerKernel();
-  if(!kernel) m_kernel = new G4MTRunManagerKernel();
-  else {
-    m_kernel = dynamic_cast<G4MTRunManagerKernel *>(kernel);
-    assert(m_kernel);
-  }
+  m_UIsession.reset(new CustomUIsession());
+  m_kernel = new G4MTRunManagerKernel();
 
   m_check = p.getUntrackedParameter<bool>("CheckOverlap",false);
   m_WriteFile = p.getUntrackedParameter<std::string>("FileNameGDML","");
@@ -131,15 +128,17 @@ void RunManagerMT::initG4(const DDCompactView *pDD, const MagneticField *pMF,
   std::unique_ptr<PhysicsListMakerBase>
     physicsMaker(PhysicsListFactory::get()->create(
       m_pPhysics.getParameter<std::string> ("type")));
-  if (physicsMaker.get()==0) {
-    throw SimG4Exception("Unable to find the Physics list requested");
+  if (physicsMaker.get()==nullptr) {
+    throw edm::Exception( edm::errors::Configuration ) 
+      << "Unable to find the Physics list requested";
   }
   m_physicsList = 
     physicsMaker->make(map_,fPDGTable,m_chordFinderSetter.get(),m_pPhysics,m_registry);
 
   PhysicsList* phys = m_physicsList.get(); 
-  if (phys==0) { 
-    throw SimG4Exception("Physics list construction failed!"); 
+  if (phys==nullptr) { 
+    throw edm::Exception( edm::errors::Configuration,
+			  "Physics list construction failed!"); 
   }
 
   // adding GFlash, Russian Roulette for eletrons and gamma, 
@@ -152,6 +151,13 @@ void RunManagerMT::initG4(const DDCompactView *pDD, const MagneticField *pMF,
   }
   edm::LogInfo("SimG4CoreApplication") 
     << "RunManagerMT: start initialisation of PhysicsList for master";
+
+  int verb = m_pPhysics.getUntrackedParameter<int>("Verbosity",0);
+
+  m_physicsList->SetDefaultCutValue(m_pPhysics.getParameter<double>("DefaultCutValue")*CLHEP::cm);
+  m_physicsList->SetCutsWithDefault();
+  m_prodCuts.reset(new DDG4ProductionCuts(map_, verb, m_pPhysics));	
+  m_prodCuts->update();
   
   m_kernel->SetPhysics(phys);
   m_kernel->InitializePhysics();
@@ -167,7 +173,8 @@ void RunManagerMT::initG4(const DDCompactView *pDD, const MagneticField *pMF,
 
   if (m_kernel->RunInitialization()) { m_managerInitialized = true; }
   else { 
-    throw SimG4Exception("G4RunManagerKernel initialization failed!"); 
+    throw edm::Exception( edm::errors::LogicError, 
+			  "G4RunManagerKernel initialization failed!"); 
   }
 
   if (m_StorePhysicsTables) {
@@ -188,6 +195,8 @@ void RunManagerMT::initG4(const DDCompactView *pDD, const MagneticField *pMF,
       G4UImanager::GetUIpointer()->ApplyCommand(m_G4Commands[it]);
     }
   }
+
+  if(verb > 1) { m_physicsList->DumpCutValuesTable(); }
 
   // geometry dump
   if("" != m_WriteFile) {
@@ -232,13 +241,15 @@ void RunManagerMT::stopG4()
 }
 
 void RunManagerMT::terminateRun() {
-  m_userRunAction->EndOfRunAction(m_currentRun);
-  delete m_userRunAction;
-  m_userRunAction = 0;
+  if(m_userRunAction) {
+    m_userRunAction->EndOfRunAction(m_currentRun);
+    delete m_userRunAction;
+    m_userRunAction = nullptr;
+  }
   if(m_kernel && !m_runTerminated) {
     m_kernel->RunTermination();
-    m_runTerminated = true;
   }
+  m_runTerminated = true;
 }
 
 void RunManagerMT::DumpMagneticField(const G4Field* field) const

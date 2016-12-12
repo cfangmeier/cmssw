@@ -21,6 +21,7 @@
 
 #include "FWCore/Utilities/interface/ObjectWithDict.h"
 #include "FWCore/Utilities/interface/TypeID.h"
+#include "FWCore/Utilities/interface/propagate_const.h"
 
 #include "TBranch.h"
 
@@ -39,9 +40,9 @@ namespace fwlite {
                     char const* iProduct,
                     char const* iProcess) :
                type_(iType),
-               module_(iModule!=0? iModule:kEmpty()),
-               product_(iProduct!=0?iProduct:kEmpty()),
-               process_(iProcess!=0?iProcess:kEmpty()) {}
+               module_(iModule != nullptr ? iModule : kEmpty()),
+               product_(iProduct != nullptr ? iProduct : kEmpty()),
+               process_(iProcess != nullptr ? iProcess : kEmpty()) {}
 
             ~DataKey() {
             }
@@ -78,7 +79,7 @@ namespace fwlite {
       };
 
       struct Data {
-            TBranch* branch_;
+            edm::propagate_const<TBranch*> branch_;
             Long64_t lastProduct_;
             edm::ObjectWithDict obj_; // For wrapped object
             void* pObj_; // ROOT requires the address of the pointer be stable

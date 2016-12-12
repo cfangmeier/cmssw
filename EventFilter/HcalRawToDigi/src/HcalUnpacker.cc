@@ -8,6 +8,9 @@
 #include "DataFormats/HcalDigi/interface/HcalQIESample.h"
 #include "FWCore/MessageLogger/interface/MessageLogger.h"
 #include "EventFilter/HcalRawToDigi/interface/HcalTTPUnpacker.h"
+#include "EventFilter/HcalRawToDigi/plugins/HcalRawToDigi.h"
+
+//#define DebugLog
 
 namespace HcalUnpacker_impl {
   template <class DigiClass>
@@ -22,7 +25,9 @@ namespace HcalUnpacker_impl {
     digi.setZSInfo(hhd.isUnsuppressed(),hhd.wasMarkAndPassZS(fiber,fiberchan),zsmask);
 
     if (expectedTime>=0 && !hhd.isUnsuppressed()) {
-      //      std::cout << hhd.getFibOrbMsgBCN(fiber) << " " << expectedTime << std::endl;
+#ifdef DebugLog
+      std::cout << hhd.getFibOrbMsgBCN(fiber) << " " << expectedTime << std::endl;
+#endif
       digi.setFiberIdleOffset(hhd.getFibOrbMsgBCN(fiber)-expectedTime);
     }
 
@@ -63,7 +68,9 @@ namespace HcalUnpacker_impl {
     digi.setZSInfo(hhd.isUnsuppressed(),hhd.wasMarkAndPassZS(fiber,fiberchan),zsmask);
 
     if (expectedTime>=0 && !hhd.isUnsuppressed()) {
-      //      std::cout << hhd.getFibOrbMsgBCN(fiber) << " " << expectedTime << std::endl;
+#ifdef DebugLog
+      std::cout << hhd.getFibOrbMsgBCN(fiber) << " " << expectedTime << std::endl;
+#endif
       digi.setFiberIdleOffset(hhd.getFibOrbMsgBCN(fiber)-expectedTime);
     }
 
@@ -582,17 +589,74 @@ void HcalUnpacker::unpackUTCA(const FEDRawData& raw, const HcalElectronicsMap& e
     int nps=(amc13->AMCId(iamc)>>12)&0xF;
     
     HcalUHTRData uhtr(amc13->AMCPayload(iamc),amc13->AMCSize(iamc));
+    //Check to make sure uMNio is not unpacked here
+    if(uhtr.getFormatVersion() != 1) {
+      unpackUMNio(raw, slot, colls);
+    }  
+#ifdef DebugLog
+    //debug printouts
+    int nwords=uhtr.getRawLengthBytes()/2;
+    for (int iw=0; iw<nwords; iw++) 
+        printf("%04d %04x\n",iw,uhtr.getRawData16()[iw]);
+#endif
+
     HcalUHTRData::const_iterator i=uhtr.begin(), iend=uhtr.end();
     while (i!=iend) {
-      ///      std::cout << i.isHeader() << " " << i.flavor() << std::endl;
+#ifdef DebugLog
+      std::cout << "This data is flavored:" << i.flavor() << std::endl;
+#endif
 
       if (!i.isHeader()) {
-	++i;
-	continue;
+	    ++i;
+#ifdef DebugLog
+	    std::cout << "its not a header" << std::endl;
+#endif
+	    continue;
       }
-      if (i.flavor() == 2) {
-	int ifiber=((i.channelid()>>2)&0x1F);
-	int ichan=(i.channelid()&0x3);
+      ///////////////////////////////////////////////HE UNPACKER//////////////////////////////////////////////////////////////////////////////////////
+      if (i.flavor() == 1 || i.flavor() == 0) {
+          int ifiber=((i.channelid()>>3)&0x1F);
+          int ichan=(i.channelid()&0x7);
+          HcalElectronicsId eid(crate,slot,ifiber,ichan, false);
+          DetId did=emap.lookup(eid);
+          // Count from current position to next header, or equal to end
+          const uint16_t* head_pos = i.raw();
+          int ns = 0;
+          for (++i; i != iend && !i.isHeader(); ++i) {
+              ns++;
+          }
+          // Check QEI11 container exists
+          if (colls.qie11 == 0) {
+              colls.qie11 = new QIE11DigiCollection(ns);
+          }
+          else if (colls.qie11->samples() != ns) {
+              // This is horrible
+              edm::LogError("Invalid Data") << "Collection has " << colls.qie11->samples() << " samples per digi, raw data has " << ns << "!";
+              return;
+          }
+
+          // Insert data
+          /////////////////////////////////////////////CODE FROM OLD STYLE DIGIS///////////////////////////////////////////////////////////////
+          if (!did.null()) { // unpack and store...
+              colls.qie11->addDataFrame(did, head_pos);
+          } else {
+              report.countUnmappedDigi(eid);
+              if (unknownIds_.find(eid)==unknownIds_.end()) {
+                  if (!silent) edm::LogWarning("HCAL") << "HcalUnpacker: No match found for electronics id :" << eid;
+                  unknownIds_.insert(eid);
+#ifdef DebugLog
+                  std::cout << "HcalUnpacker: No match found for electronics id :" << eid << std::endl;
+#endif
+              }
+#ifdef DebugLog
+              std::cout << "OH NO! detector id is null!" << std::endl;
+#endif
+          }
+      } else if (i.flavor() == 2){
+      //////////////////////////////////////////////////HF UNPACKER/////////////////////////////////////////////////////////////////////
+
+	int ifiber=((i.channelid()>>3)&0x1F);
+	int ichan=(i.channelid()&0x7);
 	HcalElectronicsId eid(crate,slot,ifiber,ichan, false);
 	DetId did=emap.lookup(eid);
 
@@ -604,6 +668,15 @@ void HcalUnpacker::unpackUTCA(const FEDRawData& raw, const HcalElectronicsMap& e
 	}
 
 	// Check QEI10 container exists
+	if (colls.qie10ZDC == 0) {
+	  colls.qie10ZDC = new QIE10DigiCollection(ns);
+	}
+	else if (colls.qie10ZDC->samples() != ns) {
+	  // This is horrible
+	  edm::LogError("Invalid Data") << "Collection has " << colls.qie10ZDC->samples() << " samples per digi, raw data has " << ns << "!";
+	  return;
+	}
+	
 	if (colls.qie10 == 0) {
 	  colls.qie10 = new QIE10DigiCollection(ns);
 	}
@@ -614,14 +687,32 @@ void HcalUnpacker::unpackUTCA(const FEDRawData& raw, const HcalElectronicsMap& e
 	}
 
 	// Insert data
-	colls.qie10->addDataFrame(did, head_pos);
+    /////////////////////////////////////////////CODE FROM OLD STYLE DIGIS///////////////////////////////////////////////////////////////
+	if (!did.null() && did.det()==DetId::Calo && did.subdetId()==HcalZDCDetId::SubdetectorId) { // unpack and store...
+		colls.qie10ZDC->addDataFrame(did, head_pos);
+	} 
+	else if (!did.null()) { // unpack and store...
+		colls.qie10->addDataFrame(did, head_pos);
+	} else {
+		report.countUnmappedDigi(eid);
+		if (unknownIds_.find(eid)==unknownIds_.end()) {
+			if (!silent) edm::LogWarning("HCAL") << "HcalUnpacker: No match found for electronics id :" << eid;
+			unknownIds_.insert(eid);
+#ifdef DebugLog
+			std::cout << "HcalUnpacker: No match found for electronics id :" << eid << std::endl;
+#endif
+		}
+#ifdef DebugLog
+		std::cout << "OH NO! HcalUnpacker: No match found for electronics id :" << eid << std::endl;
+#endif
+	}
       }
       else if (i.flavor()==0x5) { // Old-style digis
 	int ifiber=((i.channelid()>>2)&0x1F);
 	int ichan=(i.channelid()&0x3);
 	HcalElectronicsId eid(crate,slot,ifiber,ichan, false);
 	DetId did=emap.lookup(eid);
-	
+
 	if (!did.null()) { // unpack and store...
 	  if (did.det()==DetId::Calo && did.subdetId()==HcalZDCDetId::SubdetectorId) {
 	    colls.zdcCont->push_back(ZDCDataFrame(HcalZDCDetId(did)));
@@ -672,7 +763,9 @@ void HcalUnpacker::unpackUTCA(const FEDRawData& raw, const HcalElectronicsMap& e
 	int itower=(i.channelid()&0xF);
 	HcalElectronicsId eid(crate,slot,ilink,itower,true);
 	DetId did=emap.lookupTrigger(eid);
-	//std::cout << "Unpacking " << eid << " " << i.channelid() << std::endl;
+#ifdef DebugLog
+	std::cout << "Unpacking " << eid << " " << i.channelid() << std::endl;
+#endif
 	if (did.null()) {
 	  report.countUnmappedTPDigi(eid);
 	  if (unknownIdsTrig_.find(eid)==unknownIdsTrig_.end()) {
@@ -686,7 +779,9 @@ void HcalUnpacker::unpackUTCA(const FEDRawData& raw, const HcalElectronicsMap& e
 	  for (++i; i!=iend && !i.isHeader(); ++i);	
 	} else {
 	  HcalTrigTowerDetId id(did);
-	  //std::cout << "Unpacking " << id << std::endl;
+#ifdef DebugLog
+	  std::cout << "Unpacking " << id << std::endl;
+#endif
 	  colls.tpCont->push_back(HcalTriggerPrimitiveDigi(id));
 	  int j=0;
 	  for (++i; i!=iend && !i.isHeader(); ++i) {
@@ -715,6 +810,9 @@ HcalUnpacker::Collections::Collections() {
   calibCont=0;
   ttp=0;
   qie10=0;
+  qie10ZDC=0;
+  qie11=0;
+  umnio=0;
 }
 
 void HcalUnpacker::unpack(const FEDRawData& raw, const HcalElectronicsMap& emap, std::vector<HcalHistogramDigi>& histoDigis) {
@@ -774,5 +872,20 @@ void HcalUnpacker::unpack(const FEDRawData& raw, const HcalElectronicsMap& emap,
       }
     }
   }
-}      
-
+}
+// Method to unpack uMNio data
+void HcalUnpacker::unpackUMNio(const FEDRawData& raw, int slot, Collections& colls) {
+  const hcal::AMC13Header* amc13=(const hcal::AMC13Header*)(raw.data());
+  int namc=amc13->NAMC();
+  //Find AMC corresponding to uMNio slot
+  for (int iamc=0; iamc<namc; iamc++) {
+    if (amc13->AMCSlot(iamc) == slot) namc = iamc;
+  }
+  if (namc==amc13->NAMC()) {
+    return;
+  }
+  const uint16_t* data = (const uint16_t*)(amc13->AMCPayload(namc));
+  size_t nwords = amc13->AMCSize(namc) * ( sizeof(uint64_t) / sizeof(uint16_t) );
+  *(colls.umnio) = HcalUMNioDigi(data, nwords);
+  
+}

@@ -1,38 +1,31 @@
 #include "../interface/MicroGMTRelativeIsolationCheckLUT.h"
 
-l1t::MicroGMTRelativeIsolationCheckLUT::MicroGMTRelativeIsolationCheckLUT (const edm::ParameterSet& iConfig, const std::string& setName) 
+l1t::MicroGMTRelativeIsolationCheckLUT::MicroGMTRelativeIsolationCheckLUT(const std::string& fname) : MicroGMTLUT(), m_energySumInWidth(5), m_ptInWidth(9)
 {
-  getParameters(iConfig, setName.c_str());
-}
-
-l1t::MicroGMTRelativeIsolationCheckLUT::MicroGMTRelativeIsolationCheckLUT (const edm::ParameterSet& iConfig, const char* setName) 
-{
-  getParameters(iConfig, setName);
-}
-
-void 
-l1t::MicroGMTRelativeIsolationCheckLUT::getParameters (const edm::ParameterSet& iConfig, const char* setName) 
-{
-  edm::ParameterSet config = iConfig.getParameter<edm::ParameterSet>(setName);
-  m_energySumInWidth = config.getParameter<int>("areaSum_in_width");
-  m_ptInWidth = config.getParameter<int>("pT_in_width");
-  
   m_totalInWidth = m_ptInWidth + m_energySumInWidth;
+  m_outWidth = 1;
 
-  m_ptMask = (1 << m_ptInWidth) - 1;
-  m_energySumMask = (1 << (m_totalInWidth - 1)) - m_ptMask;
-  std::string m_fname = config.getParameter<std::string>("filename");
-  if (m_fname != std::string("")) {
-    load(m_fname);
+  m_energySumMask = (1 << m_energySumInWidth) - 1;
+  m_ptMask = ((1 << m_ptInWidth) - 1) << m_energySumInWidth;
+  if (fname != std::string("")) {
+    load(fname);
   } 
   m_inputs.push_back(MicroGMTConfiguration::PT);
-  m_inputs.push_back(MicroGMTConfiguration::ETA);
+  m_inputs.push_back(MicroGMTConfiguration::ENERGYSUM);
 }
 
-
-l1t::MicroGMTRelativeIsolationCheckLUT::~MicroGMTRelativeIsolationCheckLUT ()
+l1t::MicroGMTRelativeIsolationCheckLUT::MicroGMTRelativeIsolationCheckLUT(l1t::LUT* lut) : MicroGMTLUT(lut), m_energySumInWidth(5), m_ptInWidth(9)
 {
+  m_totalInWidth = m_ptInWidth + m_energySumInWidth;
+  m_outWidth = 1;
 
+  m_energySumMask = (1 << m_energySumInWidth) - 1;
+  m_ptMask = ((1 << m_ptInWidth) - 1) << m_energySumInWidth;
+
+  m_inputs.push_back(MicroGMTConfiguration::PT);
+  m_inputs.push_back(MicroGMTConfiguration::ENERGYSUM);
+
+  m_initialized = true;
 }
 
 int 

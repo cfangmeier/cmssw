@@ -31,7 +31,7 @@ process.load("DQM.Integration.config.environment_cfi")
 process.dqmEnv.subSystemFolder = "PixelLumi"
 process.dqmSaver.tag = "PixelLumi"
 
-process.source.SelectEvents = cms.untracked.vstring("HLT_ZeroBias*","HLT_L1AlwaysTrue*")
+process.source.SelectEvents = cms.untracked.vstring("HLT_ZeroBias*","HLT_L1AlwaysTrue*", "HLT_PAZeroBias*", "HLT_PAL1AlwaysTrue*")
 #process.DQMStore.referenceFileName = '/dqmdata/dqm/reference/pixel_reference_pp.root'
 #if (process.runType.getRunType() == process.runType.hi_run):
 #    process.DQMStore.referenceFileName = '/dqmdata/dqm/reference/pixel_reference_hi.root'
@@ -83,6 +83,10 @@ process.siPixelDigis.InputLabel   = cms.InputTag("rawDataCollector")
 if (process.runType.getRunType() == process.runType.hi_run):
     process.load('Configuration.StandardSequences.RawToDigi_Repacked_cff')
     process.siPixelDigis.InputLabel   = cms.InputTag("rawDataRepacker")
+
+    process.source.SelectEvents = cms.untracked.vstring('HLT_HIL1MinimumBiasHF2AND*')
+
+
 #    process.DQMEventStreamHttpReader.SelectEvents = cms.untracked.PSet(
 #        SelectEvents = cms.vstring('HLT_HI*'))
 

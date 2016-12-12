@@ -63,8 +63,11 @@ FedRawDataInputSource::FedRawDataInputSource(edm::ParameterSet const& pset,
   verifyAdler32_(pset.getUntrackedParameter<bool> ("verifyAdler32", true)),
   verifyChecksum_(pset.getUntrackedParameter<bool> ("verifyChecksum", true)),
   useL1EventID_(pset.getUntrackedParameter<bool> ("useL1EventID", false)),
+  fileNames_(pset.getUntrackedParameter<std::vector<std::string>> ("fileNames",std::vector<std::string>())),
+  fileListMode_(pset.getUntrackedParameter<bool> ("fileListMode", false)),
+  fileListLoopMode_(pset.getUntrackedParameter<bool> ("fileListLoopMode", false)),
   runNumber_(edm::Service<evf::EvFDaqDirector>()->getRunNumber()),
-  fuOutputDir_(edm::Service<evf::EvFDaqDirector>()->baseRunDir()),
+  fuOutputDir_(std::string()),
   daqProvenanceHelper_(edm::TypeID(typeid(FEDRawDataCollection))),
   eventID_(),
   processHistoryID_(),
@@ -79,8 +82,21 @@ FedRawDataInputSource::FedRawDataInputSource(edm::ParameterSet const& pset,
                                         << std::endl << (eventChunkSize_/1048576)
                                         << " MB on host " << thishost;
 
+  long autoRunNumber = -1;
+  if (fileListMode_)  {
+    autoRunNumber = initFileList();
+    if (!fileListLoopMode_) {
+      if (autoRunNumber<0)
+        throw cms::Exception("FedRawDataInputSource::FedRawDataInputSource") << "Run number not found from filename";
+      //override run number
+      runNumber_ = (edm::RunNumber_t)autoRunNumber;
+      edm::Service<evf::EvFDaqDirector>()->overrideRunNumber((unsigned int)autoRunNumber);
+    }
+  }
+
   processHistoryID_ = daqProvenanceHelper_.daqInit(productRegistryUpdate(), processHistoryRegistryForUpdate());
   setNewRun();
+  //todo:autodetect from file name (assert if names differ)
   setRunAuxiliary(new edm::RunAuxiliary(runNumber_, edm::Timestamp::beginOfTime(),
 					edm::Timestamp::invalidTimestamp()));
 
@@ -116,9 +132,16 @@ FedRawDataInputSource::FedRawDataInputSource(edm::ParameterSet const& pset,
     edm::LogError("FedRawDataInputSource::FedRawDataInputSource") << "Intel crc32c checksum computation unavailable";
 
   //get handles to DaqDirector and FastMonitoringService because getting them isn't possible in readSupervisor thread
-  fms_ = static_cast<evf::FastMonitoringService *> (edm::Service<evf::MicroStateService>().operator->());
-  if (!fms_) {
-    throw cms::Exception("FedRawDataInputSource") << "FastMonitoringService not found";
+  if (fileListMode_) {
+    try {
+      fms_ = static_cast<evf::FastMonitoringService *> (edm::Service<evf::MicroStateService>().operator->());
+    } catch(...) {}
+  }
+  else {
+    fms_ = static_cast<evf::FastMonitoringService *> (edm::Service<evf::MicroStateService>().operator->());
+    if (!fms_) {
+      throw cms::Exception("FedRawDataInputSource") << "FastMonitoringService not found";
+    }
   }
 
   daqDirector_ = edm::Service<evf::EvFDaqDirector>().operator->();
@@ -127,9 +150,12 @@ FedRawDataInputSource::FedRawDataInputSource(edm::ParameterSet const& pset,
 
   //set DaqDirector to delete files in preGlobalEndLumi callback
   daqDirector_->setDeleteTracking(&fileDeleteLock_,&filesToDelete_);
-  if (fms_) daqDirector_->setFMS(fms_);
-
-  fms_->setInputSource(this);
+  if (fms_) {
+   daqDirector_->setFMS(fms_);
+   fms_->setInputSource(this);
+   fms_->setInState(evf::FastMonitoringThread::inInit);
+   fms_->setInStateSup(evf::FastMonitoringThread::inInit);
+  }
   //should delete chunks when run stops
   for (unsigned int i=0;i<numBuffers_;i++) {
     freeChunks_.push(new InputChunk(i,eventChunkSize_));
@@ -144,6 +170,7 @@ FedRawDataInputSource::FedRawDataInputSource(edm::ParameterSet const& pset,
     thread_quit_signal.push_back(false);
     workerJob_.push_back(ReaderInfo(nullptr,nullptr));
     cvReader_.push_back(new std::condition_variable);
+    tid_active_.push_back(0);
     threadInit_.store(false,std::memory_order_release);
     workerThreads_.push_back(new std::thread(&FedRawDataInputSource::readWorker,this,i));
     startupCv_.wait(lk);
@@ -196,6 +223,8 @@ void FedRawDataInputSource::fillDescriptions(edm::ConfigurationDescriptions& des
   desc.addUntracked<bool> ("verifyAdler32", true)->setComment("Verify event Adler32 checksum with FRDv3 or v4");
   desc.addUntracked<bool> ("verifyChecksum", true)->setComment("Verify event CRC-32C checksum of FRDv5 or higher");
   desc.addUntracked<bool> ("useL1EventID", false)->setComment("Use L1 event ID from FED header if true or from TCDS FED if false");
+  desc.addUntracked<bool> ("fileListMode", false)->setComment("Use fileNames parameter to directly specify raw files to open");
+  desc.addUntracked<std::vector<std::string>> ("fileNames", std::vector<std::string>())->setComment("file list used when fileListMode is enabled");
   desc.setAllowAnything();
   descriptions.add("source", desc);
 }
@@ -204,6 +233,9 @@ bool FedRawDataInputSource::checkNextEvent()
 {
   if (!startedSupervisorThread_)
   {
+    //late init of directory variable
+    fuOutputDir_=edm::Service<evf::EvFDaqDirector>()->baseRunDir();
+
     //this thread opens new files and dispatches reading to worker readers
     //threadInit_.store(false,std::memory_order_release);
     std::unique_lock<std::mutex> lk(startupLock_);
@@ -214,13 +246,12 @@ bool FedRawDataInputSource::checkNextEvent()
   //signal hltd to start event accounting
   if (!currentLumiSection_ && daqDirector_->emptyLumisectionMode())
     daqDirector_->createProcessingNotificationMaybe();
-
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inWaitInput);
   switch (nextEvent() ) {
     case evf::EvFDaqDirector::runEnded: {
-
       //maybe create EoL file in working directory before ending run
       struct stat buf;
-      if ( currentLumiSection_ > 0 ) {
+      if ( currentLumiSection_ > 0) {
         bool eolFound = (stat(daqDirector_->getEoLSFilePathOnBU(currentLumiSection_).c_str(), &buf) == 0);
         if (eolFound) {
           const std::string fuEoLS = daqDirector_->getEoLSFilePathOnFU(currentLumiSection_);
@@ -262,7 +293,10 @@ bool FedRawDataInputSource::checkNextEvent()
           maybeOpenNewLumiSection( event_->lumi() );
 	}
       }
-      eventRunNumber_=event_->run();
+      if (fileListLoopMode_)
+        eventRunNumber_=runNumber_;
+      else 
+        eventRunNumber_=event_->run();
       L1EventID_ = event_->event();
 
       setEventCached();
@@ -288,7 +322,7 @@ void FedRawDataInputSource::maybeOpenNewLumiSection(const uint32_t lumiSection)
   if (!luminosityBlockAuxiliary()
     || luminosityBlockAuxiliary()->luminosityBlock() != lumiSection) {
 
-    if ( currentLumiSection_ > 0 ) {
+    if ( currentLumiSection_ > 0) {
       const std::string fuEoLS =
         daqDirector_->getEoLSFilePathOnFU(currentLumiSection_);
       struct stat buf;
@@ -347,6 +381,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
     }
 
     evf::EvFDaqDirector::FileStatus status = evf::EvFDaqDirector::noFile;
+    if (fms_) fms_->setInState(evf::FastMonitoringThread::inWaitInput);
     if (!fileQueue_.try_pop(currentFile_))
     {
       //sleep until wakeup (only in single-buffer mode) or timeout
@@ -357,6 +392,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
     status = currentFile_->status_;
     if ( status == evf::EvFDaqDirector::runEnded)
     {
+      if (fms_) fms_->setInState(evf::FastMonitoringThread::inRunEnd);
       delete currentFile_;
       currentFile_=nullptr;
       return status;
@@ -367,6 +403,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
     }
     else if (status == evf::EvFDaqDirector::newLumi)
     {
+      if (fms_) fms_->setInState(evf::FastMonitoringThread::inNewLumi);
       if (getLSFromFilename_) {
 	if (currentFile_->lumi_ > currentLumiSection_) {
           reportEventsThisLumiInSource(currentLumiSection_,eventsThisLumi_);
@@ -389,6 +426,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
     else
       assert(0);
   }
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inProcessingFile);
 
   //file is empty
   if (!currentFile_->fileSize_) {
@@ -413,7 +451,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
     readingFilesCount_--;
     //release last chunk (it is never released elsewhere)
     freeChunks_.push(currentFile_->chunks_[currentFile_->currentChunk_]);
-    if (currentFile_->nEvents_!=currentFile_->nProcessed_)
+    if (currentFile_->nEvents_>=0 && currentFile_->nEvents_!=int(currentFile_->nProcessed_))
     {
       throw cms::Exception("FedRawDataInputSource::getNextEvent")
 	<< "Fully processed " << currentFile_->nProcessed_ 
@@ -427,7 +465,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
       cvWakeup_.notify_one();
     }
     bufferInputRead_=0;
-    if (!daqDirector_->isSingleStreamThread()) {
+    if (!daqDirector_->isSingleStreamThread() && !fileListMode_) {
       //put the file in pending delete list;
       std::unique_lock<std::mutex> lkw(fileDeleteLock_);
       filesToDelete_.push_back(std::pair<int,InputFile*>(currentFileIndex_,currentFile_));
@@ -451,10 +489,12 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
   if (singleBufferMode_) {
 
     //should already be there
+    if (fms_) fms_->setInState(evf::FastMonitoringThread::inWaitChunk);
     while (!currentFile_->waitForChunk(currentFile_->currentChunk_)) {
       usleep(10000);
       if (currentFile_->parent_->exceptionState()) currentFile_->parent_->threadError();
     }
+    if (fms_) fms_->setInState(evf::FastMonitoringThread::inChunkReceived);
 
     unsigned char *dataPosition = currentFile_->chunks_[0]->buf_+ currentFile_->chunkPosition_;
 
@@ -511,10 +551,12 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
   else
   {
     //wait for the current chunk to become added to the vector
+    if (fms_) fms_->setInState(evf::FastMonitoringThread::inWaitChunk);
     while (!currentFile_->waitForChunk(currentFile_->currentChunk_)) {
       usleep(10000);
       if (setExceptionState_) threadError();
     }
+    if (fms_) fms_->setInState(evf::FastMonitoringThread::inChunkReceived);
 
     //check if header is at the boundary of two chunks
     chunkIsFree_ = false;
@@ -564,6 +606,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
       }
     }
   }//end multibuffer mode
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inChecksumEvent);
 
   if (verifyChecksum_ && event_->version() >= 5)
   {
@@ -588,7 +631,7 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
         " but calculated 0x" << adler;
     }
   }
-
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inCachedEvent);
 
   currentFile_->nProcessed_++;
 
@@ -597,6 +640,9 @@ inline evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getNextEvent()
 
 void FedRawDataInputSource::deleteFile(std::string const& fileName)
 {
+  //no deletion in file list mode
+  if (fileListMode_) return;
+
   const boost::filesystem::path filePath(fileName);
   LogDebug("FedRawDataInputSource") << "Deleting input file -:" << fileName;
   try {
@@ -627,6 +673,7 @@ void FedRawDataInputSource::deleteFile(std::string const& fileName)
 
 void FedRawDataInputSource::read(edm::EventPrincipal& eventPrincipal)
 {
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inReadEvent);
   std::unique_ptr<FEDRawDataCollection> rawData(new FEDRawDataCollection);
   edm::Timestamp tstamp = fillFEDRawDataCollection(*rawData);
 
@@ -649,7 +696,7 @@ void FedRawDataInputSource::read(edm::EventPrincipal& eventPrincipal)
     evf::evtn::TCDSRecord record((unsigned char *)(tcds_pointer_));
     edm::EventAuxiliary aux = evf::evtn::makeEventAuxiliary(&record,
 						 eventRunNumber_,currentLumiSection_,
-                                                 processGUID());
+                                                 processGUID(),!fileListLoopMode_);
     aux.setProcessHistoryID(processHistoryID_);
     makeEvent(eventPrincipal, aux);
   }
@@ -666,6 +713,7 @@ void FedRawDataInputSource::read(edm::EventPrincipal& eventPrincipal)
                      daqProvenanceHelper_.dummyProvenance());
 
   eventsThisLumi_++;
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inReadCleanup);
 
   //this old file check runs no more often than every 10 events
   if (!((currentFile_->nProcessed_-1)%(checkEvery_))) {
@@ -691,6 +739,7 @@ void FedRawDataInputSource::read(edm::EventPrincipal& eventPrincipal)
   }
   if (chunkIsFree_) freeChunks_.push(currentFile_->chunks_[currentFile_->currentChunk_-1]);
   chunkIsFree_=false;
+  if (fms_) fms_->setInState(evf::FastMonitoringThread::inNoRequest);
   return;
 }
 
@@ -795,8 +844,14 @@ int FedRawDataInputSource::grabNextJsonFile(boost::filesystem::path const& jsonS
     Json::Value deserializeRoot;
     Json::Reader reader;
 
-    if (!reader.parse(ij, deserializeRoot))
+    std::stringstream ss;
+    ss << ij.rdbuf();
+    if (!reader.parse(ss.str(), deserializeRoot)) {
+      edm::LogError("FedRawDataInputSource") << "Failed to deserialize JSON file -: " << jsonDestPath
+                                               << "\nERROR:\n" << reader.getFormatedErrorMessages()
+                                               << "CONTENT:\n" << ss.str()<<".";
       throw std::runtime_error("Cannot deserialize input JSON file");
+    }
 
     //read BU JSON
     std::string data;
@@ -874,12 +929,35 @@ void FedRawDataInputSource::readSupervisor()
     startupCv_.notify_one();
   }
 
+  uint32_t ls=0;
+  uint32_t monLS=1;
+  uint32_t lockCount=0;
+  uint64_t sumLockWaitTimeUs=0.;
+
   while (!stop) {
 
     //wait for at least one free thread and chunk
     int counter=0;
     while ((workerPool_.empty() && !singleBufferMode_) || freeChunks_.empty() || readingFilesCount_>=maxBufferedFiles_)
     {
+      //report state to monitoring
+      if (fms_) {
+        bool copy_active=false;
+        for (auto j : tid_active_) if (j) copy_active=true;
+        if (readingFilesCount_>=maxBufferedFiles_) fms_->setInStateSup(evf::FastMonitoringThread::inSupFileLimit);
+        else if (freeChunks_.empty()) {
+          if (copy_active)
+            fms_->setInStateSup(evf::FastMonitoringThread::inSupWaitFreeChunkCopying);
+          else
+            fms_->setInStateSup(evf::FastMonitoringThread::inSupWaitFreeChunk);
+        }
+        else {
+          if (copy_active)
+            fms_->setInStateSup(evf::FastMonitoringThread::inSupWaitFreeThreadCopying);
+          else
+            fms_->setInStateSup(evf::FastMonitoringThread::inSupWaitFreeThread);
+        }
+      }
       std::unique_lock<std::mutex> lkw(mWakeup_);
       //sleep until woken up by condition or a timeout
       if (cvWakeup_.wait_for(lkw, std::chrono::milliseconds(100)) == std::cv_status::timeout) {
@@ -897,14 +975,13 @@ void FedRawDataInputSource::readSupervisor()
 
     //look for a new file
     std::string nextFile;
-    uint32_t ls=0;
     uint32_t fileSize;
 
-    uint32_t monLS=1;
-    uint32_t lockCount=0;
-    uint64_t sumLockWaitTimeUs=0.;
-
-    if (fms_) fms_->startedLookingForFile();
+    if (fms_) {
+      fms_->setInStateSup(evf::FastMonitoringThread::inSupBusy);
+      fms_->startedLookingForFile();
+      fms_->setInStateSup(evf::FastMonitoringThread::inSupLockPolling);
+    }
 
     evf::EvFDaqDirector::FileStatus status =  evf::EvFDaqDirector::noFile;
 
@@ -915,7 +992,15 @@ void FedRawDataInputSource::readSupervisor()
       }
      
       uint64_t thisLockWaitTimeUs=0.;
-      status = daqDirector_->updateFuLock(ls,nextFile,fileSize,thisLockWaitTimeUs);
+      if (fileListMode_) {
+        //return LS if LS not set, otherwise return file
+        status = getFile(ls,nextFile,fileSize,thisLockWaitTimeUs);
+      }
+      else
+        status = daqDirector_->updateFuLock(ls,nextFile,fileSize,thisLockWaitTimeUs);
+        
+      if (fms_) fms_->setInStateSup(evf::FastMonitoringThread::inSupBusy);
+
       if (currentLumiSection!=ls && status==evf::EvFDaqDirector::runEnded) status=evf::EvFDaqDirector::noFile;
 
       //monitoring of lock wait time
@@ -931,7 +1016,8 @@ void FedRawDataInputSource::readSupervisor()
       }
 
       //check again for any remaining index/EoLS files after EoR file is seen
-      if ( status == evf::EvFDaqDirector::runEnded) {
+      if ( status == evf::EvFDaqDirector::runEnded && !fileListMode_) {
+        if (fms_) fms_->setInStateSup(evf::FastMonitoringThread::inRunEnd);
         usleep(100000);
         //now all files should have appeared in ramdisk, check again if any raw files were left behind
         status = daqDirector_->updateFuLock(ls,nextFile,fileSize,thisLockWaitTimeUs);
@@ -946,6 +1032,7 @@ void FedRawDataInputSource::readSupervisor()
 
       //queue new lumisection
       if( getLSFromFilename_ && ls > currentLumiSection) {
+        //fms_->setInStateSup(evf::FastMonitoringThread::inSupNewLumi);
 	currentLumiSection = ls;
 	fileQueue_.push(new InputFile(evf::EvFDaqDirector::newLumi, currentLumiSection));
       }
@@ -959,12 +1046,14 @@ void FedRawDataInputSource::readSupervisor()
 
       int dbgcount=0;
       if (status == evf::EvFDaqDirector::noFile) {
+        if (fms_) fms_->setInStateSup(evf::FastMonitoringThread::inSupNoFile);
 	dbgcount++;
 	if (!(dbgcount%20)) LogDebug("FedRawDataInputSource") << "No file for me... sleep and try again...";
 	usleep(100000);
       }
     }
     if ( status == evf::EvFDaqDirector::newFile ) {
+      if (fms_) fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFile);
       LogDebug("FedRawDataInputSource") << "The director says to grab -: " << nextFile;
 
 
@@ -972,13 +1061,36 @@ void FedRawDataInputSource::readSupervisor()
       std::string rawFile = rawFilePath.replace_extension(".raw").string();
 
       struct stat st;
-      stat(rawFile.c_str(),&st);
+      int stat_res = stat(rawFile.c_str(),&st);
+      if (stat_res==-1) {
+        edm::LogError("FedRawDataInputSource") << "Can not stat file (" << errno << "):-"<< rawFile << std::endl;
+        setExceptionState_=true;
+	stop=true;
+        break;
+      }
       fileSize=st.st_size;
 
-      int eventsInNewFile = grabNextJsonFile(nextFile);
-      if (fms_) fms_->stoppedLookingForFile(ls);
-      assert( eventsInNewFile>=0 );
-      assert((eventsInNewFile>0) == (fileSize>0));//file without events must be empty
+      if (fms_) {
+        fms_->setInStateSup(evf::FastMonitoringThread::inSupBusy);
+        fms_->stoppedLookingForFile(ls);
+        fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFile);
+      }
+      int eventsInNewFile;
+      if (fileListMode_) {
+        if (fileSize==0) eventsInNewFile=0;
+        else eventsInNewFile=-1;
+      }
+      else {
+        eventsInNewFile = grabNextJsonFile(nextFile);
+        assert( eventsInNewFile>=0 );
+        assert((eventsInNewFile>0) == (fileSize>0));//file without events must be empty
+      }
+      //int eventsInNewFile = fileListMode_ ? -1 : grabNextJsonFile(nextFile);
+      //if (fileListMode_ && fileSize==0) {eventsInNewFile=0;}
+      //if (!fileListMode_) {
+      //  assert( eventsInNewFile>=0 );
+      //  assert((eventsInNewFile>0) == (fileSize>0));//file without events must be empty
+      //}
 
       if (!singleBufferMode_) {
 	//calculate number of needed chunks
@@ -991,12 +1103,28 @@ void FedRawDataInputSource::readSupervisor()
 
 	for (unsigned int i=0;i<neededChunks;i++) {
 
+          if (fms_) {
+            bool copy_active=false;
+            for (auto j : tid_active_) if (j) copy_active=true;
+            if (copy_active)
+              fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFileWaitThreadCopying);
+            else
+              fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFileWaitThread);
+          }
 	  //get thread
 	  unsigned int newTid = 0xffffffff;
 	  while (!workerPool_.try_pop(newTid)) {
 	    usleep(100000);
 	  }
 
+          if (fms_) {
+            bool copy_active=false;
+            for (auto j : tid_active_) if (j) copy_active=true;
+            if (copy_active)
+              fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFileWaitChunkCopying);
+            else
+              fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFileWaitChunk);
+          }
 	  InputChunk * newChunk = nullptr;
 	  while (!freeChunks_.try_pop(newChunk)) {
             usleep(100000);
@@ -1009,6 +1137,7 @@ void FedRawDataInputSource::readSupervisor()
             stop = true;
             break;
           }
+          if (fms_) fms_->setInStateSup(evf::FastMonitoringThread::inSupNewFile);
 
 	  std::unique_lock<std::mutex> lk(mReader_);
 
@@ -1054,6 +1183,7 @@ void FedRawDataInputSource::readSupervisor()
       }
     }
   }
+  if (fms_) fms_->setInStateSup(evf::FastMonitoringThread::inRunEnd);
   //make sure threads finish reading
   unsigned numFinishedThreads = 0;
   while (numFinishedThreads < workerThreads_.size()) {
@@ -1077,6 +1207,7 @@ void FedRawDataInputSource::readWorker(unsigned int tid)
 
   while (1) {
 
+    tid_active_[tid]=false;
     std::unique_lock<std::mutex> lk(mReader_);
     workerJob_[tid].first=nullptr;
     workerJob_[tid].first=nullptr;
@@ -1092,6 +1223,7 @@ void FedRawDataInputSource::readWorker(unsigned int tid)
     cvReader_[tid]->wait(lk);
 
     if (thread_quit_signal[tid])  return;
+    tid_active_[tid]=true;
 
     InputFile * file;
     InputChunk * chunk;
@@ -1282,6 +1414,64 @@ std::pair<bool,unsigned int> FedRawDataInputSource::getEventReport(unsigned int 
     return std::pair<bool,unsigned int>(false,0);
 }
 
+long FedRawDataInputSource::initFileList()
+{
+  std::sort(fileNames_.begin(),fileNames_.end(),
+            [](std::string a, std::string b) {
+              if (a.rfind("/")!=std::string::npos) a=a.substr(a.rfind("/"));
+              if (b.rfind("/")!=std::string::npos) b=b.substr(b.rfind("/"));
+              return b > a;});
 
-// define this class as an input source
-DEFINE_FWK_INPUT_SOURCE( FedRawDataInputSource);
+  if (fileNames_.size()) {
+    //get run number from first file in the vector
+    boost::filesystem::path fileName = fileNames_[0];
+    std::string fileStem = fileName.stem().string();
+    auto end = fileStem.find("_");
+    if (fileStem.find("run")==0) {
+      std::string runStr = fileStem.substr(3,end-3);
+      try {
+        //get long to support test run numbers < 2^32
+        long rval = boost::lexical_cast<long>(runStr);
+        edm::LogInfo("FedRawDataInputSource") << "Autodetected run number in fileListMode -: "<< rval;
+        return rval;
+      }
+      catch( boost::bad_lexical_cast const& ) {
+        edm::LogWarning("FedRawDataInputSource") << "Unable to autodetect run number in fileListMode from file -: "<< fileName;
+      }
+    }
+  }
+  return -1;
+}
+
+evf::EvFDaqDirector::FileStatus FedRawDataInputSource::getFile(unsigned int& ls, std::string& nextFile, uint32_t& fsize, uint64_t& lockWaitTime)
+{
+  if (fileListIndex_ < fileNames_.size()) {
+          nextFile = fileNames_[fileListIndex_];
+          if (nextFile.find("file://")==0) nextFile=nextFile.substr(7);
+          else if (nextFile.find("file:")==0) nextFile=nextFile.substr(5);
+          boost::filesystem::path fileName = nextFile;
+          std::string fileStem = fileName.stem().string();
+          if (fileStem.find("ls")) fileStem = fileStem.substr(fileStem.find("ls")+2);
+          if (fileStem.find("_")) fileStem = fileStem.substr(0,fileStem.find("_"));
+
+          if (!fileListLoopMode_)
+            ls = boost::lexical_cast<unsigned int>(fileStem);
+          else //always starting from LS 1 in loop mode
+            ls = 1 + loopModeIterationInc_;
+
+          //fsize = 0;
+          //lockWaitTime = 0;
+          fileListIndex_++;
+          return evf::EvFDaqDirector::newFile;
+  }
+  else {
+    if (!fileListLoopMode_)
+      return evf::EvFDaqDirector::runEnded;
+    else {
+      //loop through files until interrupted
+      loopModeIterationInc_++;
+      fileListIndex_=0;
+      return getFile(ls,nextFile,fsize,lockWaitTime);
+    }
+  }
+}

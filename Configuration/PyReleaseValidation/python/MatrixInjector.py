@@ -49,6 +49,8 @@ class MatrixInjector(object):
         self.testMode=((mode!='submit') and (mode!='force'))
         self.version =1
         self.keep = opt.keep
+        self.memoryOffset = opt.memoryOffset
+        self.memPerCore = opt.memPerCore
 
         #wagemt stuff
         if not self.wmagent:
@@ -90,7 +92,7 @@ class MatrixInjector(object):
             "Requestor": self.user,                           #Person responsible
             "Group": self.group,                              #group for the request
             "CMSSWVersion": os.getenv('CMSSW_VERSION'),       #CMSSW Version (used for all tasks in chain)
-            "Campaign": os.getenv('CMSSW_VERSION'),           # only for wmstat purpose
+            "Campaign": os.getenv('CMSSW_VERSION'),           # = AcquisitionEra, will be reset later to the one of first task, will both be the CMSSW_VERSION
             "ScramArch": os.getenv('SCRAM_ARCH'),             #Scram Arch (used for all tasks in chain)
             "ProcessingVersion": self.version,                #Processing Version (used for all tasks in chain)
             "GlobalTag": None,                                #Global Tag (overridden per task)
@@ -104,7 +106,7 @@ class MatrixInjector(object):
             "unmergedLFNBase" : "/store/unmerged",
             "mergedLFNBase" : "/store/relval",
             "dashboardActivity" : "relval",
-            "Multicore" : opt.nThreads,
+            "Multicore" : 1,   # do not set multicore for the whole chain
             "Memory" : 3000,
             "SizePerEvent" : 1234,
             "TimePerEvent" : 0.1
@@ -113,7 +115,8 @@ class MatrixInjector(object):
         self.defaultHarvest={
             "EnableHarvesting" : "True",
             "DQMUploadUrl" : self.dqmgui,
-            "DQMConfigCacheID" : None
+            "DQMConfigCacheID" : None,
+            "Multicore" : 1              # hardcode Multicore to be 1 for Harvest
             }
         
         self.defaultScratch={
@@ -126,6 +129,7 @@ class MatrixInjector(object):
             "Seeding" : "AutomaticSeeding",                          #Random seeding method
             "PrimaryDataset" : None,                          #Primary Dataset to be created
             "nowmIO": {},
+            "Multicore" : opt.nThreads,                  # this is the per-taskchain Multicore; it's the default assigned to a task if it has no value specified 
             "KeepOutput" : False
             }
         self.defaultInput={
@@ -136,6 +140,7 @@ class MatrixInjector(object):
             "SplittingAlgo"  : "LumiBased",                        #Splitting Algorithm
             "LumisPerJob" : 10,               #Size of jobs in terms of splitting algorithm
             "nowmIO": {},
+            "Multicore" : opt.nThreads,                       # this is the per-taskchain Multicore; it's the default assigned to a task if it has no value specified 
             "KeepOutput" : False
             }
         self.defaultTask={
@@ -147,6 +152,7 @@ class MatrixInjector(object):
             "SplittingAlgo"  : "LumiBased",                        #Splitting Algorithm
             "LumisPerJob" : 10,               #Size of jobs in terms of splitting algorithm
             "nowmIO": {},
+            "Multicore" : opt.nThreads,                       # this is the per-taskchain Multicore; it's the default assigned to a task if it has no value specified 
             "KeepOutput" : False
             }
 
@@ -168,6 +174,8 @@ class MatrixInjector(object):
             wmsplit['RECOUP15_PU50']=1
             wmsplit['DIGIUP15_PU25']=1
             wmsplit['RECOUP15_PU25']=1
+            wmsplit['DIGIUP15_PU25HS']=1
+            wmsplit['RECOUP15_PU25HS']=1
             wmsplit['DIGIHIMIX']=5
             wmsplit['RECOHIMIX']=5
             wmsplit['RECODSplit']=1
@@ -179,9 +187,22 @@ class MatrixInjector(object):
             wmsplit['TTbarFS_ID']=1
             wmsplit['RECODR2_50nsreHLT']=1
             wmsplit['RECODR2_25nsreHLT']=1
-            wmsplit['HLTDR2_50ns']=3
-            wmsplit['HLTDR2_25ns']=3
+            wmsplit['RECODR2_2016reHLT']=5
+            wmsplit['RECODR2_2016reHLT_skimSingleMu']=5
+            wmsplit['RECODR2_2016reHLT_skimDoubleEG']=5
+            wmsplit['RECODR2_2016reHLT_skimMuonEG']=5
+            wmsplit['RECODR2_2016reHLT_skimJetHT']=5
+            wmsplit['RECODR2_2016reHLT_skimSinglePh']=5
+            wmsplit['RECODR2_2016reHLT_skimMuOnia']=5
+            wmsplit['HLTDR2_50ns']=1
+            wmsplit['HLTDR2_25ns']=1
+            wmsplit['HLTDR2_2016']=1
             wmsplit['Hadronizer']=1
+            wmsplit['DIGIUP15']=5
+            wmsplit['RECOUP15']=5
+            wmsplit['RECOAODUP15']=5
+            wmsplit['DBLMINIAODMCUP15NODQM']=5
+
                                     
             #import pprint
             #pprint.pprint(wmsplit)            
@@ -207,6 +228,9 @@ class MatrixInjector(object):
                     if len( [step for step in s[3] if "HARVESTGEN" in step] )>0:
                         chainDict['TimePerEvent']=0.01
                         thisLabel=thisLabel+"_gen"
+                    # for double miniAOD test
+                    if len( [step for step in s[3] if "DBLMINIAODMCUP15NODQM" in step] )>0:
+                        thisLabel=thisLabel+"_dblMiniAOD"
                     processStrPrefix=''
                     setPrimaryDs=None
                     for step in s[3]:
@@ -313,6 +337,19 @@ class MatrixInjector(object):
                                 chainDict['nowmTasklist'][-1]['AcquisitionEra']=chainDict['CMSSWVersion']
                                 chainDict['nowmTasklist'][-1]['ProcessingString']=processStrPrefix+chainDict['nowmTasklist'][-1]['GlobalTag'].replace('::All','')+thisLabel
 
+                            # specify different ProcessingString for double miniAOD dataset
+                            if ('DBLMINIAODMCUP15NODQM' in step): 
+                                chainDict['nowmTasklist'][-1]['ProcessingString']=chainDict['nowmTasklist'][-1]['ProcessingString']+'_miniAOD' 
+
+                            if( chainDict['nowmTasklist'][-1]['Multicore'] ):
+                                # the scaling factor of 1.2GB / thread is empirical and measured on a SECOND round of tests with PU samples
+                                # the number of threads is NO LONGER assumed to be the same for all tasks
+                                # https://hypernews.cern.ch/HyperNews/CMS/get/edmFramework/3509/1/1/1.html
+                                # now change to 1.5GB / additional thread according to discussion:
+                                # https://hypernews.cern.ch/HyperNews/CMS/get/relval/4817/1/1.html
+#                                chainDict['nowmTasklist'][-1]['Memory'] = 3000 + int( chainDict['nowmTasklist'][-1]['Multicore']  -1 )*1500
+                                chainDict['nowmTasklist'][-1]['Memory'] = self.memoryOffset + int( chainDict['nowmTasklist'][-1]['Multicore']  -1 ) * self.memPerCore
+
                         index+=1
                     #end of loop through steps
                     chainDict['RequestString']='RV'+chainDict['CMSSWVersion']+s[1].split('+')[0]
@@ -348,12 +385,34 @@ class MatrixInjector(object):
                                     #t_input['DQMConfigCacheID']=t_second['ConfigCacheID']
                                 break
 
+               
             ## there is in fact only one acquisition era
             #if len(set(chainDict['AcquisitionEra'].values()))==1:
             #    print "setting only one acq"
+            # agreed changes for wm injection:
+            # - Campaign: *optional* string during creation. It will default to AcqEra value if possible.  
+            #             Otherwise it will be empty.
+            # - AcquisitionEra: *mandatory* string at request level during creation. *optional* string
+            #                   at task level during creation. "optional" during assignment.
+            # - ProcessingString: *mandatory* string at request level during creation. *optional* string
+            #                     at task level during creation. "optional" during assignment.
+            # - ProcessingVersion: *optional* during creation (default 1). *optional* during assignment.
+            # 
+            # Which requires following changes here:
+            #  - reset Global AcuisitionEra, ProcessingString to be the one in the first task
+            #  - and also Campaign to be always the same as the AcquisitionEra
+
             if acqEra:
                 chainDict['AcquisitionEra'] = chainDict['AcquisitionEra'].values()[0]
-                
+                chainDict['AcquisitionEra'] = chainDict['AcquisitionEra'].values()[0] 
+                chainDict['ProcessingString'] = chainDict['ProcessingString'].values()[0]
+            else:
+                chainDict['AcquisitionEra'] = chainDict['nowmTasklist'][0]['AcquisitionEra']
+                chainDict['ProcessingString'] = chainDict['nowmTasklist'][0]['ProcessingString']
+                  
+            chainDict['Campaign'] = chainDict['AcquisitionEra']
+            
+ 
             ## clean things up now
             itask=0
             if self.keep:

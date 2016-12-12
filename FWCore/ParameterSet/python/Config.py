@@ -7,7 +7,7 @@ options = Options()
 
 ## imports
 import sys
-from Mixins import PrintOptions,_ParameterTypeBase,_SimpleParameterTypeBase, _Parameterizable, _ConfigureComponent, _TypedParameterizable, _Labelable,  _Unlabelable,  _ValidatingListBase
+from Mixins import PrintOptions,_ParameterTypeBase,_SimpleParameterTypeBase, _Parameterizable, _ConfigureComponent, _TypedParameterizable, _Labelable,  _Unlabelable,  _ValidatingListBase, _modifyParametersFromDict
 from Mixins import *
 from Types import *
 from Modules import *
@@ -15,7 +15,6 @@ from Modules import _Module
 from SequenceTypes import *
 from SequenceTypes import _ModuleSequenceType, _Sequenceable  #extend needs it
 from SequenceVisitors import PathValidator, EndPathValidator
-from Utilities import *
 import DictTypes
 
 from ExceptionHandling import *
@@ -517,6 +516,7 @@ class Process(object):
         self.__dict__['_Process__InExtendCall'] = True
 
         seqs = dict()
+        mods = []
         for name in dir(other):
             #'from XX import *' ignores these, and so should we.
             if name.startswith('_'):
@@ -537,7 +537,7 @@ class Process(object):
             elif isinstance(item,_Unlabelable):
                 self.add_(item)
             elif isinstance(item,ProcessModifier):
-                item.apply(self)
+                mods.append(item)
             elif isinstance(item,ProcessFragment):
                 self.extend(item)
 
@@ -554,6 +554,11 @@ class Process(object):
                 self.__setObjectLabel(newSeq, name)
                 #now put in proper bucket
                 newSeq._place(name,self)
+
+        #apply modifiers now that all names have been added
+        for item in mods:
+            item.apply(self)
+
         self.__dict__['_Process__InExtendCall'] = False
 
     def _dumpConfigNamedList(self,items,typeName,options):
@@ -707,6 +712,8 @@ class Process(object):
             result += "process.source = "+self.source_().dumpPython(options)
         if self.looper_():
             result += "process.looper = "+self.looper_().dumpPython()
+        result+=self._dumpPythonList(self.psets, options)
+        result+=self._dumpPythonList(self.vpsets, options)
         result+=self._dumpPythonSubProcesses(self.subProcesses_(), options)
         result+=self._dumpPythonList(self.producers_(), options)
         result+=self._dumpPythonList(self.filters_() , options)
@@ -720,8 +727,6 @@ class Process(object):
         result+=self._dumpPythonList(self.es_sources_(), options)
         result+=self._dumpPython(self.es_prefers_(), options)
         result+=self._dumpPythonList(self.aliases_(), options)
-        result+=self._dumpPythonList(self.psets, options)
-        result+=self._dumpPythonList(self.vpsets, options)
         if self.schedule:
             pathNames = ['process.'+p.label_() for p in self.schedule]
             result +='process.schedule = cms.Schedule(*[ ' + ', '.join(pathNames) + ' ])\n'
@@ -1102,8 +1107,42 @@ class _ParameterModifier(object):
   def __init__(self,args):
     self.__args = args
   def __call__(self,obj):
-    for k,v in self.__args.iteritems():
-      setattr(obj,k,v)
+    params = {}
+    for k in self.__args.iterkeys():
+        if hasattr(obj,k):
+            params[k] = getattr(obj,k)
+        else:
+            params[k] = self.__args[k]
+    _modifyParametersFromDict(params, self.__args, self._raiseUnknownKey)
+    for k in self.__args.iterkeys():
+        if k in params:
+            setattr(obj,k,params[k])
+        else:
+            #the parameter must have been removed
+            delattr(obj,k)
+  def _raiseUnknownKey(key):
+    raise KeyError("Unknown parameter name "+k+" specified while calling Modifier")
+
+class _AndModifier(object):
+  """A modifier which only applies if multiple Modifiers are chosen"""
+  def __init__(self, lhs, rhs):
+    self.__lhs = lhs
+    self.__rhs = rhs
+  def isChosen(self):
+    return self.__lhs.isChosen() and self.__rhs.isChosen()
+  def toModify(self,obj, func=None,**kw):
+    if not self.isChosen():
+      return
+    self.__lhs.toModify(obj,func, **kw)
+  def makeProcessModifier(self,func):
+    """This is used to create a ProcessModifer that can perform actions on the process as a whole.
+        This takes as argument a callable object (e.g. function) that takes as its sole argument an instance of Process.
+        In order to work, the value returned from this function must be assigned to a uniquely named variable."""
+    return ProcessModifier(self,func)
+  def __and__(self, other):
+    return _AndModifier(self,other)
+
+
 
 class Modifier(object):
   """This class is used to define standard modifications to a Process.
@@ -1129,6 +1168,12 @@ class Modifier(object):
     that will be the object passed in as the first argument.
     Form 2: A list of parameter name, value pairs can be passed
        mod.toModify(foo, fred=cms.int32(7), barney = cms.double(3.14))
+    This form can also be used to remove a parameter by passing the value of None
+        #remove the parameter foo.fred       
+        mod.toModify(foo, fred = None)
+    Additionally, parameters embedded within PSets can also be modified using a dictionary
+        #change foo.fred.pebbles to 3 and foo.fred.friend to "barney"
+        mod.toModify(foo, fred = dict(pebbles = 3, friend = "barney)) )
     """
     if func is not None and len(kw) != 0:
       raise TypeError("toModify takes either two arguments or one argument and key/value pairs")
@@ -1139,11 +1184,35 @@ class Modifier(object):
     else:
       temp =_ParameterModifier(kw)
       temp(obj)
+  def toReplaceWith(self,toObj,fromObj):
+    """If the Modifier is chosen the internals of toObj will be associated with the internals of fromObj
+    """
+    if type(fromObj) != type(toObj):
+        raise TypeError("toReplaceWith requires both arguments to be the same class type")
+    if not self.isChosen():
+        return
+    if isinstance(fromObj,_ModuleSequenceType):
+        toObj._seq = fromObj._seq
+    elif isinstance(fromObj,_Parameterizable):
+        #clear old items just incase fromObj is not a complete superset of toObj
+        for p in toObj.parameterNames_():
+            delattr(toObj,p)
+        for p in fromObj.parameterNames_():
+            setattr(toObj,p,getattr(fromObj,p))
+        if isinstance(fromObj,_TypedParameterizable):
+            toObj._TypedParameterizable__type = fromObj._TypedParameterizable__type
+            
+    else:
+        raise TypeError("toReplaceWith does not work with type "+str(type(toObj)))
+
   def _setChosen(self):
     """Should only be called by cms.Process instances"""
     self.__chosen = True
   def isChosen(self):
     return self.__chosen
+  def __and__(self, other):
+    return _AndModifier(self,other)
+
 
 class ModifierChain(object):
     """A Modifier made up of a list of Modifiers
@@ -1478,6 +1547,48 @@ process.p2 = cms.Path(process.r)
 
 
 process.schedule = cms.Schedule(*[ process.p2, process.p ])
+""")
+
+            s = Sequence()
+            a = EDProducer("A")
+            s2 = Sequence(a)
+            s2 += s
+            process = Process("DUMP")
+            process.a = a
+            process.s2 = s2
+            d=process.dumpPython()
+            self.assertEqual(d,
+            """import FWCore.ParameterSet.Config as cms
+
+process = cms.Process("DUMP")
+
+process.a = cms.EDProducer("A")
+
+
+process.s2 = cms.Sequence(process.a)
+
+
+""")
+            s = Sequence()
+            s1 = Sequence(s)
+            a = EDProducer("A")
+            s2 = Sequence(a)
+            s2 += s1
+            process = Process("DUMP")
+            process.a = a
+            process.s2 = s2
+            d=process.dumpPython()
+            self.assertEqual(d,
+            """import FWCore.ParameterSet.Config as cms
+
+process = cms.Process("DUMP")
+
+process.a = cms.EDProducer("A")
+
+
+process.s2 = cms.Sequence(process.a)
+
+
 """)
 
         def testSecSource(self):
@@ -1928,6 +2039,27 @@ process.addSubProcess(cms.SubProcess(process = childProcess, SelectEvents = cms.
             self.assertEqual(p.a.wilma.value(),1)
             self.assertEqual(p.b.fred.value(),2)
             self.assertEqual(p.b.wilma.value(),3)
+            #test removal of parameter
+            m1 = Modifier()
+            p = Process("test",m1)
+            p.a = EDAnalyzer("MyAnalyzer", fred = int32(1), wilma = int32(1))
+            m1.toModify(p.a, fred = None)
+            self.assertEqual(hasattr(p.a, "fred"), False)
+            self.assertEqual(p.a.wilma.value(),1)
+            #test adding a parameter
+            m1 = Modifier()
+            p = Process("test",m1)
+            p.a = EDAnalyzer("MyAnalyzer", fred = int32(1))
+            m1.toModify(p.a, wilma = int32(2))
+            self.assertEqual(p.a.fred.value(), 1)
+            self.assertEqual(p.a.wilma.value(),2)
+            #test setting of value in PSet
+            m1 = Modifier()
+            p = Process("test",m1)
+            p.a = EDAnalyzer("MyAnalyzer", flintstones = PSet(fred = int32(1), wilma = int32(1)))
+            m1.toModify(p.a, flintstones = dict(fred = int32(2)))
+            self.assertEqual(p.a.flintstones.fred.value(),2)
+            self.assertEqual(p.a.flintstones.wilma.value(),1)
             #test that load causes process wide methods to run
             def _rem_a(proc):
                 del proc.a
@@ -1958,6 +2090,42 @@ process.addSubProcess(cms.SubProcess(process = childProcess, SelectEvents = cms.
             p.extend(testProcMod)
             self.assert_(not hasattr(p,"a"))
             self.assertEqual(p.b.fred.value(),3)
-
-
+            #check combining
+            m1 = Modifier()
+            m2 = Modifier()
+            p = Process("test",m1)
+            p.a = EDAnalyzer("MyAnalyzer", fred = int32(1), wilma = int32(1))
+            (m1 & m2).toModify(p.a, fred = int32(2))
+            self.assertEqual(p.a.fred, 1)
+            m1 = Modifier()
+            m2 = Modifier()
+            p = Process("test",m1,m2)
+            p.a = EDAnalyzer("MyAnalyzer", fred = int32(1), wilma = int32(1))
+            (m1 & m2).toModify(p.a, fred = int32(2))
+            self.assertEqual(p.a.fred, 2)
+            m1 = Modifier()
+            m2 = Modifier()
+            m3 = Modifier()
+            p = Process("test",m1,m2,m3)
+            p.a = EDAnalyzer("MyAnalyzer", fred = int32(1), wilma = int32(1))
+            (m1 & m2 & m3).toModify(p.a, fred = int32(2))
+            self.assertEqual(p.a.fred, 2)
+            #check toReplaceWith
+            m1 = Modifier()
+            p = Process("test",m1)
+            p.a =EDAnalyzer("MyAnalyzer", fred = int32(1))
+            m1.toReplaceWith(p.a, EDAnalyzer("YourAnalyzer", wilma = int32(3)))
+            p.b =EDAnalyzer("BAn")
+            p.s = Sequence(p.a)
+            m1.toReplaceWith(p.s, Sequence(p.a+p.b))
+            self.assertEqual(p.a.wilma.value(),3)
+            self.assertEqual(p.a.type_(),"YourAnalyzer")
+            self.assertEqual(hasattr(p,"fred"),False)
+            self.assertEqual(p.s.dumpPython(""),"cms.Sequence(process.a+process.b)\n")
+            #check toReplaceWith doesn't activate not chosen
+            m1 = Modifier()
+            p = Process("test")
+            p.a =EDAnalyzer("MyAnalyzer", fred = int32(1))
+            m1.toReplaceWith(p.a, EDAnalyzer("YourAnalyzer", wilma = int32(3)))
+            self.assertEqual(p.a.type_(),"MyAnalyzer")
     unittest.main()

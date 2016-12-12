@@ -13,6 +13,7 @@
 #include <sstream>
 #include <iomanip>
 #include <vector>
+#include <map>
 #include <list>
 #include <mutex>
 
@@ -46,6 +47,8 @@ namespace edm {
 
 namespace evf{
 
+  enum MergeType { MergeTypeNULL = 0, MergeTypeDAT = 1, MergeTypePB = 2, MergeTypeJSNDATA = 3};
+
   class FastMonitoringService;
 
   class EvFDaqDirector
@@ -56,6 +59,7 @@ namespace evf{
 
       explicit EvFDaqDirector( const edm::ParameterSet &pset, edm::ActivityRegistry& reg );
       ~EvFDaqDirector();
+      void initRun();
       static void fillDescriptions(edm::ConfigurationDescriptions& descriptions);
       void preallocate(edm::service::SystemBounds const& bounds);
       void preBeginJob(edm::PathsAndConsumesOfModulesBase const&, edm::ProcessContext const&);
@@ -64,6 +68,7 @@ namespace evf{
       void preGlobalEndLumi(edm::GlobalContext const& globalContext);
       void preSourceEvent(edm::StreamID const& streamID);
       //std::string &baseDir(){return base_dir_;}
+      void overrideRunNumber(unsigned int run) {run_=run;}
       std::string &baseRunDir(){return run_dir_;}
       std::string &buBaseRunDir(){return bu_run_dir_;}
       std::string &buBaseRunOpenDir(){return bu_run_open_dir_;}
@@ -73,6 +78,7 @@ namespace evf{
       std::string getRawFilePath(const unsigned int ls, const unsigned int index) const;
       std::string getOpenRawFilePath(const unsigned int ls, const unsigned int index) const;
       std::string getOpenInputJsonFilePath(const unsigned int ls, const unsigned int index) const;
+      std::string getDatFilePath(const unsigned int ls, std::string const& stream) const;
       std::string getOpenDatFilePath(const unsigned int ls, std::string const& stream) const;
       std::string getOpenOutputJsonFilePath(const unsigned int ls, std::string const& stream) const;
       std::string getOutputJsonFilePath(const unsigned int ls, std::string const& stream) const;
@@ -119,8 +125,11 @@ namespace evf{
         filesToDeletePtr_ = filesToDelete;
       }
       void checkTransferSystemPSet(edm::ProcessContext const& pc);
+      void checkMergeTypePSet(edm::ProcessContext const& pc);
       std::string getStreamDestinations(std::string const& stream) const;
+      std::string getStreamMergeType(std::string const& stream, MergeType defaultType);
       bool emptyLumisectionMode() const {return emptyLumisectionMode_;}
+      bool microMergeDisabled() const {return microMergeDisabled_;}
 
 
     private:
@@ -146,6 +155,8 @@ namespace evf{
       std::string hltSourceDirectory_;
       unsigned int fuLockPollInterval_;
       bool emptyLumisectionMode_;
+      bool microMergeDisabled_;
+      std::string mergeTypePset_;
 
       std::string hostname_;
       std::string run_string_;
@@ -199,8 +210,14 @@ namespace evf{
       bool readEolsDefinition_ = true;
       unsigned int eolsNFilesIndex_ = 1;
       std::string stopFilePath_;
+      std::string stopFilePathPid_;
+      unsigned int stop_ls_override_ = 0;
 
       std::shared_ptr<Json::Value> transferSystemJson_;
+      std::map<std::string,std::string> mergeTypeMap_;
+
+      //values initialized in .cc file
+      static const std::vector<std::string> MergeTypeNames_;
   };
 }
 

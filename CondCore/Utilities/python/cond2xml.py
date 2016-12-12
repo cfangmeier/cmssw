@@ -74,10 +74,6 @@ buildFileTemplate = """
 <use   name="boost_iostreams"/>
 <use   name="boost_serialization"/>
 <use   name="boost_program_options"/>
-<use   name="CondCore/DBCommon"/>
-<use   name="CondCore/IOVService"/>
-<use   name="CondCore/MetaDataService"/>
-<use   name="CondCore/TagCollection"/>
 <use   name="CondCore/CondDB"/>
 <use   name="CondFormats/HLTObjects"/>
 <use   name="CondFormats/Alignment"/>
@@ -166,8 +162,9 @@ class CondXmlProcessor(object):
 
     	startTime = time.time()
     
+        Payload = session.get_dbtype(self.conddb.Payload)
         # get payload from DB:
-        result = session.query(self.conddb.Payload.data, self.conddb.Payload.object_type).filter(self.conddb.Payload.hash == payload).one()
+        result = session.query(Payload.data, Payload.object_type).filter(Payload.hash == payload).one()
         data, plType = result
     
         info = { "mdName" : "pl2xmlComp",
@@ -223,8 +220,9 @@ class CondXmlProcessor(object):
            self._pl2xml_isPrepared = True
 
     
+        Payload = session.get_dbtype(self.conddb.Payload)
         # get payload from DB:
-        result = session.query(self.conddb.Payload.data, self.conddb.Payload.object_type).filter(self.conddb.Payload.hash == payload).one()
+        result = session.query(Payload.data, Payload.object_type).filter(Payload.hash == payload).one()
         data, plType = result
     
         convFuncName = sanitize(plType)+'2xml'

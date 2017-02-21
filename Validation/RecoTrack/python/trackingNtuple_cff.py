@@ -54,7 +54,6 @@ def _filterForNtuple(lst):
             continue
         ret.append(item)
     return ret
-<<<<<<< HEAD
 # The line below is commented out because it is replaced by the electron-specific line below
 # _seedProducers = _filterForNtuple(_TrackValidation_cff._seedProducers)
 
@@ -89,7 +88,6 @@ _seedProducersOriginal = ['initialStepSeeds',
                           'tripletElectronSeeds',
                           'pixelPairElectronSeeds',
                           'stripPairElectronSeeds']
-print 'I will use this original collection: ', _seedProducersOriginal
 (_seedSelectorsOriginal, trackingNtupleSeedSelectorsOriginal) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducersOriginal, globals())
 trackingNtuple.seedTracksOriginal = _seedSelectorsOriginal
 
@@ -99,6 +97,9 @@ trackingNtuple.trackCandidates = map(_seedProdToTrackCands, _seedProducers)
 trackingPhase1.toModify(trackingNtuple, trackCandidates=map(_seedProdToTrackCands, _seedProducers_trackingPhase1))
 trackingPhase1QuadProp.toModify(trackingNtuple, trackCandidates=map(_seedProdToTrackCands, _seedProducers_trackingPhase1QuadProp))
 trackingPhase2PU140.toModify(trackingNtuple, trackCandidates=map(_seedProdToTrackCands, _seedProducers_trackingPhase2PU140))
+
+trackingNtuple.barrelSuperClusters = cms.untracked.InputTag("particleFlowSuperClusterECAL:particleFlowSuperClusterECALBarrel")
+trackingNtuple.endcapSuperClusters = cms.untracked.InputTag("particleFlowSuperClusterECAL:particleFlowSuperClusterECALEndcapWithPreshower")
 
 trackingNtupleSequence = cms.Sequence()
 
@@ -116,6 +117,8 @@ if _includeHits:
 if _includeSeeds:
     trackingNtupleSequence += trackingNtupleSeedSelectors
     trackingNtupleSequence += trackingNtupleSeedSelectorsOriginal
+
+print 'Configuration for Ntuple finished'
 
 trackingNtupleSequence += (
     # sim information

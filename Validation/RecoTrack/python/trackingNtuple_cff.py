@@ -6,16 +6,16 @@ from SimTracker.TrackerHitAssociation.tpClusterProducer_cfi import *
 from SimTracker.TrackAssociatorProducers.quickTrackAssociatorByHits_cfi import *
 from RecoTracker.TransientTrackingRecHit.TTRHBuilders_cff import *
 from RecoLocalTracker.SiPixelRecHits.PixelCPEGeneric_cfi import *
-from RecoLocalTracker.Phase2TrackerRecHits.Phase2TrackerRecHits_cfi import *
 from Geometry.TrackerNumberingBuilder.trackerTopology_cfi import *
 
 from Validation.RecoTrack.trackingNtuple_cfi import *
 from Validation.RecoTrack.TrackValidation_cff import *
 from SimGeneral.TrackingAnalysis.trackingParticleNumberOfLayersProducer_cff import *
 import Validation.RecoTrack.TrackValidation_cff as _TrackValidation_cff
+import RecoTracker.IterativeTracking.ElectronSeeds_cff as _electron_cff
 
-_includeHits = True
-#_includeHits = False
+#_includeHits = True
+_includeHits = False
 
 _includeSeeds = True
 #_includeSeeds = False
@@ -53,41 +53,40 @@ def _filterForNtuple(lst):
             continue
         ret.append(item)
     return ret
-_seedProducers = _filterForNtuple(_TrackValidation_cff._seedProducers)
-_seedProducers_trackingPhase1 = _filterForNtuple(_TrackValidation_cff._seedProducers_trackingPhase1)
-_seedProducers_trackingPhase1QuadProp = _filterForNtuple(_TrackValidation_cff._seedProducers_trackingPhase1QuadProp)
-_seedProducers_trackingPhase2PU140  = _filterForNtuple(_TrackValidation_cff._seedProducers_trackingPhase2PU140)
 
+# Build seed tracks from the GSF tracks seeds
+_seedProducers = ['electronMergedSeeds']
 (_seedSelectors, trackingNtupleSeedSelectors) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducers, globals())
-(_seedSelectors_trackingPhase1, _trackingNtupleSeedSelectors_trackingPhase1) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducers_trackingPhase1, globals())
-(_seedSelectors_trackingPhase1QuadProp, _trackingNtupleSeedSelectors_trackingPhase1QuadProp) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducers_trackingPhase1QuadProp, globals())
-(_seedSelectors_trackingPhase2PU140, _trackingNtupleSeedSelectors_trackingPhase2PU140) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducers_trackingPhase2PU140, globals())
-from Configuration.Eras.Modifier_trackingPhase1_cff import trackingPhase1
-from Configuration.Eras.Modifier_trackingPhase1QuadProp_cff import trackingPhase1QuadProp
-from Configuration.Eras.Modifier_trackingPhase2PU140_cff import trackingPhase2PU140
-trackingPhase1.toReplaceWith(trackingNtupleSeedSelectors, _trackingNtupleSeedSelectors_trackingPhase1)
-trackingPhase1QuadProp.toReplaceWith(trackingNtupleSeedSelectors, _trackingNtupleSeedSelectors_trackingPhase1QuadProp)
-trackingPhase2PU140.toReplaceWith(trackingNtupleSeedSelectors, _trackingNtupleSeedSelectors_trackingPhase2PU140)
 
 trackingNtuple.seedTracks = _seedSelectors
-trackingPhase1.toModify(trackingNtuple, seedTracks = _seedSelectors_trackingPhase1)
-trackingPhase1QuadProp.toModify(trackingNtuple, seedTracks = _seedSelectors_trackingPhase1)
-trackingPhase2PU140.toModify(trackingNtuple, seedTracks = _seedSelectors_trackingPhase2PU140)
+trackingNtuple.tracks = cms.untracked.InputTag('electronGsfTracks')
 
+# Matches to the original seeds defined in RecoTracker.IterativeTracking.ElectronSeeds_cff
+_seedProducersOriginal = ['initialStepSeeds',
+                          'highPtTripletStepSeeds',
+                          'mixedTripletStepSeeds',
+                          'pixelLessStepSeeds',
+                          'tripletElectronSeeds',
+                          'pixelPairElectronSeeds',
+                          'stripPairElectronSeeds']
+(_seedSelectorsOriginal, trackingNtupleSeedSelectorsOriginal) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducersOriginal, globals())
+trackingNtuple.seedTracksOriginal = _seedSelectorsOriginal
+trackingNtuple.barrelSuperClusters = cms.untracked.InputTag("particleFlowSuperClusterECAL:particleFlowSuperClusterECALBarrel")
+trackingNtuple.endcapSuperClusters = cms.untracked.InputTag("particleFlowSuperClusterECAL:particleFlowSuperClusterECALEndcapWithPreshower")
 trackingNtupleSequence = cms.Sequence()
+
 # reproduce hits because they're not stored in RECO
 if _includeHits:
     trackingNtupleSequence += (
         siPixelRecHits +
         siStripMatchedRecHits
     )
-    _phase2_trackingNtupleSequence = trackingNtupleSequence.copy()
-    _phase2_trackingNtupleSequence.remove(siStripMatchedRecHits)
-    _phase2_trackingNtupleSequence += (siPhase2RecHits)
-    trackingPhase2PU140.toReplaceWith(trackingNtupleSequence, _phase2_trackingNtupleSequence)
 
 if _includeSeeds:
     trackingNtupleSequence += trackingNtupleSeedSelectors
+    trackingNtupleSequence += trackingNtupleSeedSelectorsOriginal
+
+print 'Configuration for Ntuple finished'
 
 trackingNtupleSequence += (
     # sim information

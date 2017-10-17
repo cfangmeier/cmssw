@@ -15,7 +15,7 @@ import Validation.RecoTrack.TrackValidation_cff as _TrackValidation_cff
 import RecoTracker.IterativeTracking.ElectronSeeds_cff as _electron_cff
 
 #_includeHits = True
-_includeHits = False
+_includeHits = True
 
 _includeSeeds = True
 #_includeSeeds = False

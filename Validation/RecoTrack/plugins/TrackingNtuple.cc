@@ -1146,8 +1146,6 @@ private:
   std::vector<float> see_dPhi1;
   std::vector<float> see_dRz1Pos;
   std::vector<float> see_dPhi1Pos;
-  std::vector<float> see_hoe1;
-  std::vector<float> see_hoe2;
   std::vector<float> see_superClusterEnergy;
   std::vector<float> see_superClusterEta;
   std::vector<float> see_superClusterPhi;
@@ -1217,7 +1215,6 @@ private:
 // constructors and destructor
 //
 TrackingNtuple::TrackingNtuple(const edm::ParameterSet& iConfig):
-  seedTokens_(consumes<edm::View<reco::Track>>(iConfig.get
   seedTokens_(edm::vector_transform(iConfig.getUntrackedParameter<std::vector<edm::InputTag> >("seedTracks"), [&](const edm::InputTag& tag) {
         return consumes<edm::View<reco::Track> >(tag);
       })),
@@ -1555,8 +1552,6 @@ TrackingNtuple::TrackingNtuple(const edm::ParameterSet& iConfig):
     t->Branch("see_dPhi1", &see_dPhi1);
     t->Branch("see_dRz1Pos", &see_dRz1Pos);
     t->Branch("see_dPhi1Pos", &see_dPhi1Pos);
-    t->Branch("see_hoe1", &see_hoe1);
-    t->Branch("see_hoe2", &see_hoe2);
     t->Branch("see_superClusterEnergy", &see_superClusterEnergy);
     t->Branch("see_superClusterEta", &see_superClusterEta);
     t->Branch("see_superClusterPhi", &see_superClusterPhi);
@@ -1863,8 +1858,6 @@ void TrackingNtuple::clearVariables() {
   see_dPhi1.clear();
   see_dRz1Pos.clear();
   see_dPhi1Pos.clear();
-  see_hoe1.clear();
-  see_hoe2.clear();
   see_superClusterEnergy.clear();
   see_superClusterEta.clear();
   see_superClusterPhi.clear();
@@ -2651,9 +2644,6 @@ void TrackingNtuple::fillSeeds(const edm::Event& iEvent,
     if(seedTracks.empty()) 
       continue;
 
-    edm::EDConsumerBase::Labels labels;
-    labelsForToken(seedToken, labels);
-
     const auto& seedStopReasonToken = seedStopReasonTokens_[iColl];
     edm::Handle<std::vector<short> > seedStopReasonHandle;
     iEvent.getByToken(seedStopReasonToken, seedStopReasonHandle);
@@ -2673,7 +2663,6 @@ void TrackingNtuple::fillSeeds(const edm::Event& iEvent,
     reco::RecoToSimCollection recSimColl = associatorByHits.associateRecoToSim(seedTrackRefs, tpCollection);
     reco::SimToRecoCollection simRecColl = associatorByHits.associateSimToReco(seedTrackRefs, tpCollection);
 
-    TString label = labels.module;
     //format label to match algoName
     label.ReplaceAll("seedTracks", "");
     label.ReplaceAll("Seeds","");
@@ -2802,8 +2791,6 @@ void TrackingNtuple::fillSeeds(const edm::Event& iEvent,
       see_dPhi1.push_back(electronSeed.dPhi1());
       see_dRz1Pos.push_back(electronSeed.dRz1Pos());
       see_dPhi1Pos.push_back(electronSeed.dPhi1Pos());
-      see_hoe1.push_back(electronSeed.hoe1());
-      see_hoe2.push_back(electronSeed.hoe2());
 
       
       if (!electronSeed.caloCluster().isNull()) {

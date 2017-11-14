@@ -1198,8 +1198,14 @@ private:
   std::vector<float> scl_y;
   std::vector<float> scl_z;
   std::vector<std::vector<int> >  scl_charge;
-  std::vector<std::vector<int> >   scl_lay1;
-  std::vector<std::vector<int> >   scl_lay2;
+  std::vector<std::vector<int> >   scl_layer1;
+  std::vector<std::vector<int> >   scl_layer2;
+  std::vector<std::vector<int> >   scl_ladder1;
+  std::vector<std::vector<int> >   scl_ladder2;
+  std::vector<std::vector<int> >   scl_blade1;
+  std::vector<std::vector<int> >   scl_blade2;
+  std::vector<std::vector<int> >   scl_panel1;
+  std::vector<std::vector<int> >   scl_panel2;
   std::vector<std::vector<int> >   scl_subDet1;
   std::vector<std::vector<int> >   scl_subDet2;
   std::vector<std::vector<float> > scl_dRz1;
@@ -1611,8 +1617,10 @@ TrackingNtuple::TrackingNtuple(const edm::ParameterSet& iConfig):
   t->Branch("scl_y", &scl_y);
   t->Branch("scl_z", &scl_z);
   t->Branch("scl_charge", &scl_charge);
-  t->Branch("scl_lay1", &scl_lay1);
-  t->Branch("scl_lay2", &scl_lay2);
+  t->Branch("scl_layer1", &scl_layer1);
+  t->Branch("scl_layer2", &scl_layer2);
+  t->Branch("scl_ladder1", &scl_ladder1);
+  t->Branch("scl_ladder2", &scl_ladder2);
   t->Branch("scl_subDet1", &scl_subDet1);
   t->Branch("scl_subDet2", &scl_subDet2);
   t->Branch("scl_dRz1", &scl_dRz1);
@@ -1650,8 +1658,10 @@ void TrackingNtuple::clearVariables() {
   scl_y.clear();
   scl_z.clear();
   scl_charge.clear();
-  scl_lay1.clear();
-  scl_lay2.clear();
+  scl_layer1.clear();
+  scl_layer2.clear();
+  scl_ladder1.clear();
+  scl_ladder2.clear();
   scl_subDet1.clear();
   scl_subDet2.clear();
   scl_dRz1.clear();
@@ -3492,8 +3502,14 @@ void TrackingNtuple::fillSuperClusters(const edm::Event& iEvent,
     scl_z.push_back(bs.position().z());
 
     std::vector<int>   scl_charge_;
-    std::vector<int>   scl_lay1_;
-    std::vector<int>   scl_lay2_;
+    std::vector<int>   scl_layer1_;
+    std::vector<int>   scl_layer2_;
+    std::vector<int>   scl_ladder1_;
+    std::vector<int>   scl_ladder2_;
+    std::vector<int>   scl_blade1_;
+    std::vector<int>   scl_blade2_;
+    std::vector<int>   scl_panel1_;
+    std::vector<int>   scl_panel2_;
     std::vector<int>   scl_subDet1_;
     std::vector<int>   scl_subDet2_;
     std::vector<float> scl_dRz1_;
@@ -3551,7 +3567,13 @@ void TrackingNtuple::fillSuperClusters(const edm::Event& iEvent,
             if (std::abs(zVertex) > 15.) continue;
 
             //store first hit
-            scl_lay1_.push_back(tTopo.layer(id1));
+            scl_layer1_.push_back(tTopo.layer(id1));
+
+            const bool isBarrel = id1.subdetId() == PixelSubdetector::PixelBarrel;
+            scl_ladder1_.push_back(isBarrel ? tTopo.pxbLadder(id1) : 0);
+            scl_blade1_.push_back(isBarrel ? 0 : tTopo.pxfBlade(id1));
+            scl_panel1_.push_back(isBarrel ? 0 : tTopo.pxfPanel(id1));
+
             scl_subDet1_.push_back(subDet1);
             scl_dRz1_.push_back(dRz1);
             scl_dPhi1_.push_back(dPhi1);
@@ -3562,7 +3584,10 @@ void TrackingNtuple::fillSuperClusters(const edm::Event& iEvent,
             float min_dRz2 = -999.;
             float min_dPhi2 = -999.;
             int min_subDet2 = -999;
-            int min_lay2 = -999;
+            int min_layer2 = -999;
+            int min_ladder2 = -999;
+            int min_blade2 = -999;
+            int min_panel2 = -999;
             unsigned char min_hitsMask = 0;
             for( auto it2 = it1+1; it2 != hits.second; ++it2 ) {
 
@@ -3584,11 +3609,18 @@ void TrackingNtuple::fillSuperClusters(const edm::Event& iEvent,
                 min_dRz2 = dRz2;
                 min_dPhi2 = dPhi2;
                 min_subDet2 = subDet2;
-                min_lay2 = tTopo.layer(id2);
+                min_layer2 = tTopo.layer(id2);
+                const bool isBarrel = id2.subdetId() == PixelSubdetector::PixelBarrel;
+                min_ladder2 = isBarrel ? tTopo.pxbLadder(id2) : 0;
+                min_blade2 = isBarrel ? 0 : tTopo.pxfBlade(id2);
+                min_panel2 = isBarrel ? 0 : tTopo.pxfPanel(id2);
                 min_hitsMask = (1<<idx1)|(1<<idx2);
               }
             }
-            scl_lay2_.push_back(min_lay2);
+            scl_layer2_.push_back(min_layer2);
+            scl_ladder2_.push_back(min_ladder2);
+            scl_blade2_.push_back(min_blade2);
+            scl_panel2_.push_back(min_panel2);
             scl_subDet2_.push_back(min_subDet2);
             scl_dRz2_.push_back(min_dRz2);
             scl_dPhi2_.push_back(min_dPhi2);
@@ -3598,8 +3630,14 @@ void TrackingNtuple::fillSuperClusters(const edm::Event& iEvent,
       }
     }
     scl_charge.push_back(scl_charge_);
-    scl_lay1.push_back(scl_lay1_);
-    scl_lay2.push_back(scl_lay2_);
+    scl_layer1.push_back(scl_layer1_);
+    scl_layer2.push_back(scl_layer2_);
+    scl_ladder1.push_back(scl_ladder1_);
+    scl_ladder2.push_back(scl_ladder2_);
+    scl_blade1.push_back(scl_blade1_);
+    scl_blade2.push_back(scl_blade2_);
+    scl_panel1.push_back(scl_panel1_);
+    scl_panel2.push_back(scl_panel2_);
     scl_subDet1.push_back(scl_subDet1_);
     scl_subDet2.push_back(scl_subDet2_);
     scl_dRz1.push_back(scl_dRz1_);

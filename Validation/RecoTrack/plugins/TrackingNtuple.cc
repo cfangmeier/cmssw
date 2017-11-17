@@ -569,6 +569,7 @@ private:
   edm::EDGetTokenT<ClusterTPAssociation> clusterTPMapToken_;
   edm::EDGetTokenT<SimHitTPAssociationProducer::SimHitTPAssociationList> simHitTPMapToken_;
   edm::EDGetTokenT<reco::TrackToTrackingParticleAssociator> trackAssociatorToken_;
+  edm::EDGetTokenT<reco::ElectronSeedCollection> electronSeedCollectionToken_;
   edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink> > pixelSimLinkToken_;
   edm::EDGetTokenT<edm::DetSetVector<StripDigiSimLink> > stripSimLinkToken_;
   edm::EDGetTokenT<edm::DetSetVector<PixelDigiSimLink> > siphase2OTSimLinksToken_;
@@ -1231,6 +1232,7 @@ TrackingNtuple::TrackingNtuple(const edm::ParameterSet& iConfig):
   clusterTPMapToken_(consumes<ClusterTPAssociation>(iConfig.getUntrackedParameter<edm::InputTag>("clusterTPMap"))),
   simHitTPMapToken_(consumes<SimHitTPAssociationProducer::SimHitTPAssociationList>(iConfig.getUntrackedParameter<edm::InputTag>("simHitTPMap"))),
   trackAssociatorToken_(consumes<reco::TrackToTrackingParticleAssociator>(iConfig.getUntrackedParameter<edm::InputTag>("trackAssociator"))),
+  electronSeedCollectionToken_(consumes<reco::ElectronSeedCollection>(iConfig.getUntrackedParameter<edm::InputTag>("electronSeeds"))),
   pixelSimLinkToken_(consumes<edm::DetSetVector<PixelDigiSimLink> >(iConfig.getUntrackedParameter<edm::InputTag>("pixelDigiSimLink"))),
   stripSimLinkToken_(consumes<edm::DetSetVector<StripDigiSimLink> >(iConfig.getUntrackedParameter<edm::InputTag>("stripDigiSimLink"))),
   siphase2OTSimLinksToken_(consumes<edm::DetSetVector<PixelDigiSimLink> >(iConfig.getUntrackedParameter<edm::InputTag>("phase2OTSimLink"))),
@@ -1978,6 +1980,11 @@ void TrackingNtuple::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   edm::Handle<reco::TrackToTrackingParticleAssociator> theAssociator;
   iEvent.getByToken(trackAssociatorToken_, theAssociator);
   const reco::TrackToTrackingParticleAssociator& associatorByHits = *theAssociator;
+
+  edm::Handle<reco::ElectronSeedCollection> electronSeedCollectionHandle;
+  iEvent.getByToken<reco::ElectronSeedCollection>(electronSeedCollectionToken_, electronSeedCollectionHandle);
+  const reco::ElectronSeedCollection& electronSeedCollection = *electronSeedCollectionHandle;;
+  LogDebug("TrackingNtuple") << "Found " << electronSeedCollection.size() << "electron Seeds";
 
   LogDebug("TrackingNtuple") << "Analyzing new event";
 
@@ -3694,6 +3701,7 @@ void TrackingNtuple::fillDescriptions(edm::ConfigurationDescriptions& descriptio
   desc.addUntracked<edm::InputTag>("clusterTPMap", edm::InputTag("tpClusterProducer"));
   desc.addUntracked<edm::InputTag>("simHitTPMap", edm::InputTag("simHitTPAssocProducer"));
   desc.addUntracked<edm::InputTag>("trackAssociator", edm::InputTag("quickTrackAssociatorByHits"));
+  desc.addUntracked<edm::InputTag>("electronSeeds", edm::InputTag("ElectronNHitSeedProducer"));
   desc.addUntracked<edm::InputTag>("pixelDigiSimLink", edm::InputTag("simSiPixelDigis"));
   desc.addUntracked<edm::InputTag>("stripDigiSimLink", edm::InputTag("simSiStripDigis"));
   desc.addUntracked<edm::InputTag>("phase2OTSimLink", edm::InputTag(""));

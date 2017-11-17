@@ -1,0 +1,12 @@
+cmsDriver.py generate_trackingNtuple2 \
+    --conditions 92X_upgrade2017_realistic_v10 \
+    -n 10 \
+    --era Run2_2017 \
+    --eventcontent RECOSIM,MINIAODSIM,DQM \
+    -s RAW2DIGI,L1Reco,RECO,EI,PAT,VALIDATION:@standardValidation+@miniAODValidation \
+    --datatier GEN-SIM-RECO,MINIAODSIM,DQMIO \
+    --filein file:step2.root \
+    --fileout file:trackingNtuple.root \
+    --customise Validation/RecoTrack/customiseTrackingNtuple.customiseTrackingNtuple \
+    --runUnscheduled \
+    --no_exec \

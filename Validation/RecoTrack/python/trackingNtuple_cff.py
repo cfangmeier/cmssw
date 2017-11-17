@@ -91,9 +91,65 @@ if _includeSeeds:
     trackingNtupleSequence += trackingNtupleSeedSelectors
     trackingNtupleSequence += trackingNtupleSeedSelectorsOriginal
 
-print("seedTracks:", trackingNtuple.seedTracks)
-# print("trackCandidates:", trackingNtuple.trackCandidates)
-print('Configuration for Ntuple finished')
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+seedProducer = cms.EDProducer( "ElectronNHitSeedProducer",
+    matcherConfig = cms.PSet(
+      detLayerGeom = cms.string( "hltESPGlobalDetLayerGeometry" ),
+      navSchool = cms.string( "SimpleNavigationSchool" ),
+      useRecoVertex = cms.bool( False ),
+      minNrHits = cms.vuint32( 2, 3 ),
+      matchingCuts = cms.VPSet(
+        cms.PSet(
+          dPhiMaxHighEt = cms.vdouble( 0.05 ),
+          version = cms.int32( 2 ),
+          dRZMaxHighEt = cms.vdouble( 9999.0 ),
+          dRZMaxLowEtGrad = cms.vdouble( 0.0 ),
+          dPhiMaxLowEtGrad = cms.vdouble( -0.002 ),
+          dPhiMaxHighEtThres = cms.vdouble( 20.0 ),
+          dRZMaxHighEtThres = cms.vdouble( 0.0 )
+        ),
+        cms.PSet(
+          etaBins = cms.vdouble(  ),
+          dPhiMaxHighEt = cms.vdouble( 0.003 ),
+          version = cms.int32( 2 ),
+          dRZMaxHighEt = cms.vdouble( 0.05 ),
+          dRZMaxLowEtGrad = cms.vdouble( -0.002 ),
+          dPhiMaxLowEtGrad = cms.vdouble( 0.0 ),
+          dPhiMaxHighEtThres = cms.vdouble( 0.0 ),
+          dRZMaxHighEtThres = cms.vdouble( 30.0 )
+        ),
+        cms.PSet(
+          etaBins = cms.vdouble(  ),
+          dPhiMaxHighEt = cms.vdouble( 0.003 ),
+          version = cms.int32( 2 ),
+          dRZMaxHighEt = cms.vdouble( 0.05 ),
+          dRZMaxLowEtGrad = cms.vdouble( -0.002 ),
+          dPhiMaxLowEtGrad = cms.vdouble( 0.0 ),
+          dPhiMaxHighEtThres = cms.vdouble( 0.0 ),
+          dRZMaxHighEtThres = cms.vdouble( 30.0 )
+        )
+      ),
+      minNrHitsValidLayerBins = cms.vint32( 4 )
+    ),
+    beamSpot = cms.InputTag( "hltOnlineBeamSpot" ),
+    measTkEvt = cms.InputTag( "hltSiStripClusters" ),
+    vertices = cms.InputTag( "" ),
+    # superClusters = cms.VInputTag( 'hltEgammaSuperClustersToPixelMatch' ),
+    superClusters = cms.VInputTag(
+        "particleFlowSuperClusterECAL:particleFlowSuperClusterECALBarrel",
+        "particleFlowSuperClusterECAL:particleFlowSuperClusterECALEndcapWithPreshower"
+    ),
+    # initialSeeds = cms.InputTag( "hltElePixelSeedsCombined" )
+    initialSeeds = cms.InputTag( "initialStepSeeds" )
+)
+#-----------------------------------------------------------------------------
+#-----------------------------------------------------------------------------
+
+# seedProducer_step = cms.Path(seedProducer)
+trackingNtuple.electronSeeds = cms.untracked.InputTag("electronNHitSeedProducer")
+
+dump=cms.EDAnalyzer('EventContentAnalyzer')  # See: https://twiki.cern.ch/twiki/bin/view/CMSPublic/WorkBookWriteFrameworkModule#SeE
 
 trackingNtupleSequence += (
     # sim information
@@ -102,7 +158,10 @@ trackingNtupleSequence += (
     tpClusterProducer +
     quickTrackAssociatorByHits +
     trackingParticleNumberOfLayersProducer +
+    # Add Electron Seed Info
+    seedProducer +
     # ntuplizer
+    dump +
     trackingNtuple
 )
 
@@ -111,3 +170,4 @@ trackingPhase2PU140.toModify(trackingNtuple, # FIXME
   stripDigiSimLink = cms.untracked.InputTag(''),
   phase2OTSimLink = cms.untracked.InputTag('simSiPixelDigis', "Tracker")
 )
+print('Configuration for Ntuple finished')

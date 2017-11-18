@@ -112,6 +112,7 @@
 #include <unordered_map>
 #include <tuple>
 #include <utility>
+#include <iostream>
 
 #include "TTree.h"
 
@@ -1981,10 +1982,13 @@ void TrackingNtuple::analyze(const edm::Event& iEvent, const edm::EventSetup& iS
   iEvent.getByToken(trackAssociatorToken_, theAssociator);
   const reco::TrackToTrackingParticleAssociator& associatorByHits = *theAssociator;
 
+  LogDebug("TrackingNtuple") << "Looking up Electron Seeds";
+  cout << "Looking up Electron Seeds" << endl;
   edm::Handle<reco::ElectronSeedCollection> electronSeedCollectionHandle;
   iEvent.getByToken<reco::ElectronSeedCollection>(electronSeedCollectionToken_, electronSeedCollectionHandle);
   const reco::ElectronSeedCollection& electronSeedCollection = *electronSeedCollectionHandle;;
   LogDebug("TrackingNtuple") << "Found " << electronSeedCollection.size() << "electron Seeds";
+  cout << "Found " << electronSeedCollection.size() << "electron Seeds" << endl;
 
   LogDebug("TrackingNtuple") << "Analyzing new event";
 
@@ -3701,7 +3705,7 @@ void TrackingNtuple::fillDescriptions(edm::ConfigurationDescriptions& descriptio
   desc.addUntracked<edm::InputTag>("clusterTPMap", edm::InputTag("tpClusterProducer"));
   desc.addUntracked<edm::InputTag>("simHitTPMap", edm::InputTag("simHitTPAssocProducer"));
   desc.addUntracked<edm::InputTag>("trackAssociator", edm::InputTag("quickTrackAssociatorByHits"));
-  desc.addUntracked<edm::InputTag>("electronSeeds", edm::InputTag("ElectronNHitSeedProducer"));
+  desc.addUntracked<edm::InputTag>("electronSeeds", edm::InputTag("electronNHitSeedProducer"));
   desc.addUntracked<edm::InputTag>("pixelDigiSimLink", edm::InputTag("simSiPixelDigis"));
   desc.addUntracked<edm::InputTag>("stripDigiSimLink", edm::InputTag("simSiStripDigis"));
   desc.addUntracked<edm::InputTag>("phase2OTSimLink", edm::InputTag(""));

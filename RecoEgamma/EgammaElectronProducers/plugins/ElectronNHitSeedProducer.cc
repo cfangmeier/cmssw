@@ -40,6 +40,8 @@
 
 #include "RecoEgamma/EgammaElectronAlgos/interface/TrajSeedMatcher.h"
 
+#include<iostream>
+
 class ElectronNHitSeedProducer : public edm::stream::EDProducer<> {
 public:
 
@@ -55,7 +57,8 @@ private:
 
   TrajSeedMatcher matcher_;
 
-  std::vector<edm::EDGetTokenT<std::vector<reco::SuperClusterRef>> > superClustersTokens_;
+  /* std::vector<edm::EDGetTokenT<std::vector<reco::SuperClusterRef>> > superClustersTokens_; */
+  std::vector<edm::EDGetTokenT<reco::SuperClusterCollection> > superClustersTokens_;
   edm::EDGetTokenT<TrajectorySeedCollection> initialSeedsToken_ ;
   edm::EDGetTokenT<std::vector<reco::Vertex> > verticesToken_;
   edm::EDGetTokenT<reco::BeamSpot> beamSpotToken_ ;
@@ -109,9 +112,11 @@ ElectronNHitSeedProducer::ElectronNHitSeedProducer( const edm::ParameterSet& pse
   beamSpotToken_(consumes<reco::BeamSpot>(pset.getParameter<edm::InputTag>("beamSpot"))),
   measTkEvtToken_(consumes<MeasurementTrackerEvent>(pset.getParameter<edm::InputTag>("measTkEvt")))
 {
+  std::cout << "Initiating ElectronNHitSeedProducer" << std::endl;
+
   const auto superClusTags = pset.getParameter<std::vector<edm::InputTag> >("superClusters");
   for(const auto& scTag : superClusTags){
-    superClustersTokens_.emplace_back(consumes<std::vector<reco::SuperClusterRef>>(scTag));
+    superClustersTokens_.emplace_back(consumes<reco::SuperClusterCollection>(scTag));
   }
   produces<reco::ElectronSeedCollection>() ;
 }
@@ -132,7 +137,8 @@ void ElectronNHitSeedProducer::fillDescriptions(edm::ConfigurationDescriptions& 
 void ElectronNHitSeedProducer::produce(edm::Event& iEvent, const edm::EventSetup& iSetup)
 {
   //--------------------
-  edm::LogInfo("ElectronNHitSeedProducer") << "Produce!!";
+  /* edm::LogInfo("ElectronNHitSeedProducer") << "Produce!!"; */
+  std::cout << "Produce!!" << std::endl;
   //--------------------
   edm::ESHandle<TrackerTopology> trackerTopoHandle;
   iSetup.get<TrackerTopologyRcd>().get(trackerTopoHandle);
@@ -148,8 +154,16 @@ void ElectronNHitSeedProducer::produce(edm::Event& iEvent, const edm::EventSetup
   GlobalPoint primVtxPos = convertToGP(beamSpotHandle->position());
 
   for(const auto& superClustersToken : superClustersTokens_){
-    auto superClustersHandle = getHandle(iEvent,superClustersToken);
-    for(auto& superClusRef : *superClustersHandle){
+    edm::Handle<reco::SuperClusterCollection> superClustersHandle = getHandle(iEvent,superClustersToken);
+    /* edm::Handle<std::vector<reco::SuperCluster>> superClustersHandle; */
+    /* iEvent.getByToken(superClustersToken, superClustersHandle); */
+    /* reco::SuperClusterRef superClusRefs(superClustersHandle); */
+    size_t nClusters = superClustersHandle->size();
+    for(size_t scl_idx=0; scl_idx<nClusters; scl_idx++){
+    /* for(auto& superCluster : *superClustersHandle){ */
+      edm::Ref<reco::SuperClusterCollection> superClusRef(superClustersHandle, scl_idx);
+
+      /* edm::Ref<vector<SuperClusterCollection> superClusRef(superClus); */
 
       //the eta of the supercluster when mustache clustered is slightly biased due to bending in magnetic field
       //the eta of its seed cluster is a better estimate of the orginal position

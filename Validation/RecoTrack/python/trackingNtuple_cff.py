@@ -93,63 +93,56 @@ if _includeSeeds:
 
 #-----------------------------------------------------------------------------
 #-----------------------------------------------------------------------------
-seedProducer = cms.EDProducer( "ElectronNHitSeedProducer",
+electronNHitSeedProducer = cms.EDProducer("ElectronNHitSeedProducer",
+    beamSpot = cms.InputTag("offlineBeamSpot"),
+    initialSeeds = cms.InputTag("initialStepSeeds"),
     matcherConfig = cms.PSet(
-      detLayerGeom = cms.string( "hltESPGlobalDetLayerGeometry" ),
-      navSchool = cms.string( "SimpleNavigationSchool" ),
-      useRecoVertex = cms.bool( False ),
-      minNrHits = cms.vuint32( 2, 3 ),
-      matchingCuts = cms.VPSet(
-        cms.PSet(
-          dPhiMaxHighEt = cms.vdouble( 0.05 ),
-          version = cms.int32( 2 ),
-          dRZMaxHighEt = cms.vdouble( 9999.0 ),
-          dRZMaxLowEtGrad = cms.vdouble( 0.0 ),
-          dPhiMaxLowEtGrad = cms.vdouble( -0.002 ),
-          dPhiMaxHighEtThres = cms.vdouble( 20.0 ),
-          dRZMaxHighEtThres = cms.vdouble( 0.0 )
-        ),
-        cms.PSet(
-          etaBins = cms.vdouble(  ),
-          dPhiMaxHighEt = cms.vdouble( 0.003 ),
-          version = cms.int32( 2 ),
-          dRZMaxHighEt = cms.vdouble( 0.05 ),
-          dRZMaxLowEtGrad = cms.vdouble( -0.002 ),
-          dPhiMaxLowEtGrad = cms.vdouble( 0.0 ),
-          dPhiMaxHighEtThres = cms.vdouble( 0.0 ),
-          dRZMaxHighEtThres = cms.vdouble( 30.0 )
-        ),
-        cms.PSet(
-          etaBins = cms.vdouble(  ),
-          dPhiMaxHighEt = cms.vdouble( 0.003 ),
-          version = cms.int32( 2 ),
-          dRZMaxHighEt = cms.vdouble( 0.05 ),
-          dRZMaxLowEtGrad = cms.vdouble( -0.002 ),
-          dPhiMaxLowEtGrad = cms.vdouble( 0.0 ),
-          dPhiMaxHighEtThres = cms.vdouble( 0.0 ),
-          dRZMaxHighEtThres = cms.vdouble( 30.0 )
-        )
-      ),
-      minNrHitsValidLayerBins = cms.vint32( 4 )
+        detLayerGeom = cms.string('GlobalDetLayerGeometry'),
+        matchingCuts = cms.VPSet(cms.PSet(
+            dPhiMaxHighEt = cms.vdouble(0.05),
+            dPhiMaxHighEtThres = cms.vdouble(20.0),
+            dPhiMaxLowEtGrad = cms.vdouble(-0.002),
+            dRZMaxHighEt = cms.vdouble(9999.0),
+            dRZMaxHighEtThres = cms.vdouble(0.0),
+            dRZMaxLowEtGrad = cms.vdouble(0.0),
+            version = cms.int32(2)
+        ), 
+            cms.PSet(
+                dPhiMaxHighEt = cms.vdouble(0.003),
+                dPhiMaxHighEtThres = cms.vdouble(0.0),
+                dPhiMaxLowEtGrad = cms.vdouble(0.0),
+                dRZMaxHighEt = cms.vdouble(0.05),
+                dRZMaxHighEtThres = cms.vdouble(30.0),
+                dRZMaxLowEtGrad = cms.vdouble(-0.002),
+                etaBins = cms.vdouble(),
+                version = cms.int32(2)
+            ), 
+            cms.PSet(
+                dPhiMaxHighEt = cms.vdouble(0.003),
+                dPhiMaxHighEtThres = cms.vdouble(0.0),
+                dPhiMaxLowEtGrad = cms.vdouble(0.0),
+                dRZMaxHighEt = cms.vdouble(0.05),
+                dRZMaxHighEtThres = cms.vdouble(30.0),
+                dRZMaxLowEtGrad = cms.vdouble(-0.002),
+                etaBins = cms.vdouble(),
+                version = cms.int32(2)
+            )),
+        minNrHits = cms.vuint32(2, 3),
+        minNrHitsValidLayerBins = cms.vint32(4),
+        navSchool = cms.string('SimpleNavigationSchool'),
+        useRecoVertex = cms.bool(False)
     ),
-    beamSpot = cms.InputTag( "hltOnlineBeamSpot" ),
-    measTkEvt = cms.InputTag( "hltSiStripClusters" ),
-    vertices = cms.InputTag( "" ),
-    # superClusters = cms.VInputTag( 'hltEgammaSuperClustersToPixelMatch' ),
+    measTkEvt = cms.InputTag("MeasurementTrackerEvent"),
     superClusters = cms.VInputTag(
-        "particleFlowSuperClusterECAL:particleFlowSuperClusterECALBarrel",
-        "particleFlowSuperClusterECAL:particleFlowSuperClusterECALEndcapWithPreshower"
-    ),
-    # initialSeeds = cms.InputTag( "hltElePixelSeedsCombined" )
-    initialSeeds = cms.InputTag( "initialStepSeeds" )
+        cms.InputTag("particleFlowSuperClusterECAL","particleFlowSuperClusterECALBarrel"),
+        cms.InputTag("particleFlowSuperClusterECAL","particleFlowSuperClusterECALEndcapWithPreshower"),
+        ),
+    vertices = cms.InputTag("")
 )
 #-----------------------------------------------------------------------------
 #-----------------------------------------------------------------------------
 
-# seedProducer_step = cms.Path(seedProducer)
 trackingNtuple.electronSeeds = cms.untracked.InputTag("electronNHitSeedProducer")
-
-dump=cms.EDAnalyzer('EventContentAnalyzer')  # See: https://twiki.cern.ch/twiki/bin/view/CMSPublic/WorkBookWriteFrameworkModule#SeE
 
 trackingNtupleSequence += (
     # sim information
@@ -159,9 +152,8 @@ trackingNtupleSequence += (
     quickTrackAssociatorByHits +
     trackingParticleNumberOfLayersProducer +
     # Add Electron Seed Info
-    seedProducer +
+    electronNHitSeedProducer +
     # ntuplizer
-    dump +
     trackingNtuple
 )
 

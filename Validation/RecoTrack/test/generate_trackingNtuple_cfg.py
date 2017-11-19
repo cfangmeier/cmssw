@@ -26,13 +26,13 @@ process.load('Configuration.StandardSequences.PATMC_cff')
 process.load('Configuration.StandardSequences.Validation_cff')
 process.load('Configuration.StandardSequences.FrontierConditions_GlobalTag_cff')
 
-process.MessageLogger.cerr.threshold = 'DEBUG'
-process.MessageLogger.categories.append('XOXO')
-process.MessageLogger.cerr.DEBUG = cms.untracked.PSet(
-    limit = cms.untracked.int32(-1)
-)
+# process.MessageLogger.cerr.threshold = 'DEBUG'
+# process.MessageLogger.categories.append('XOXO')
+# process.MessageLogger.cerr.DEBUG = cms.untracked.PSet(
+#     limit = cms.untracked.int32(-1)
+# )
 
-process.Tracer = cms.Service("Tracer")
+# process.Tracer = cms.Service("Tracer")
 
 process.maxEvents = cms.untracked.PSet(
     input = cms.untracked.int32(10)
@@ -48,7 +48,7 @@ process.options = cms.untracked.PSet(
 
 )
 
-process.dump=cms.EDAnalyzer('EventContentAnalyzer')
+# process.dump=cms.EDAnalyzer('EventContentAnalyzer')
 
 # Production Info
 process.configurationMetadata = cms.untracked.PSet(

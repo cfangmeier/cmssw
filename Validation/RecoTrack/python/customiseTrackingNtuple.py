@@ -29,7 +29,6 @@ def customiseTrackingNtuple(process):
 
     # Should replay mixing for pileup simhits?
     usePileupSimHits = hasattr(process, "mix") and hasattr(process.mix, "input") and len(process.mix.input.fileNames) > 0
-#    process.eda = cms.EDAnalyzer("EventContentAnalyzer")
 
     ntuplePath = cms.EndPath(process.trackingNtupleSequence)
     if process.trackingNtuple.includeAllHits and usePileupSimHits:
@@ -45,6 +44,64 @@ def customiseTrackingNtuple(process):
     modifier = cms.Modifier()
     modifier._setChosen()
     modifier.toReplaceWith(process.validation_step, ntuplePath)
+
+    process.electronNHitSeedProducer = cms.EDProducer("ElectronNHitSeedProducer",
+        beamSpot = cms.InputTag("offlineBeamSpot"),
+        initialSeeds = cms.VInputTag(
+            cms.InputTag("newCombinedSeeds"),
+        ),
+        matcherConfig = cms.PSet(
+            detLayerGeom = cms.string('GlobalDetLayerGeometry'),
+            matchingCuts = cms.VPSet(
+                cms.PSet(
+                    dPhiMaxHighEt = cms.vdouble(0.05),
+                    dPhiMaxHighEtThres = cms.vdouble(20.0),
+                    dPhiMaxLowEtGrad = cms.vdouble(-0.002),
+                    dRZMaxHighEt = cms.vdouble(9999.0),
+                    dRZMaxHighEtThres = cms.vdouble(0.0),
+                    dRZMaxLowEtGrad = cms.vdouble(0.0),
+                    version = cms.int32(2)
+                ),
+                cms.PSet(
+                    dPhiMaxHighEt = cms.vdouble(0.003),
+                    dPhiMaxHighEtThres = cms.vdouble(0.0),
+                    dPhiMaxLowEtGrad = cms.vdouble(0.0),
+                    dRZMaxHighEt = cms.vdouble(0.05),
+                    dRZMaxHighEtThres = cms.vdouble(30.0),
+                    dRZMaxLowEtGrad = cms.vdouble(-0.002),
+                    etaBins = cms.vdouble(),
+                    version = cms.int32(2)
+                ), 
+                cms.PSet(
+                    dPhiMaxHighEt = cms.vdouble(0.003),
+                    dPhiMaxHighEtThres = cms.vdouble(0.0),
+                    dPhiMaxLowEtGrad = cms.vdouble(0.0),
+                    dRZMaxHighEt = cms.vdouble(0.05),
+                    dRZMaxHighEtThres = cms.vdouble(30.0),
+                    dRZMaxLowEtGrad = cms.vdouble(-0.002),
+                    etaBins = cms.vdouble(),
+                    version = cms.int32(2)
+                )),
+            minNrHits = cms.vuint32(2, 3),
+            minNrHitsValidLayerBins = cms.vint32(4),
+            navSchool = cms.string('SimpleNavigationSchool'),
+            useRecoVertex = cms.bool(False)
+        ),
+        measTkEvt = cms.InputTag("MeasurementTrackerEvent"),
+        superClusters = cms.VInputTag(
+            cms.InputTag("particleFlowSuperClusterECAL","particleFlowSuperClusterECALBarrel"),
+            cms.InputTag("particleFlowSuperClusterECAL","particleFlowSuperClusterECALEndcapWithPreshower"),
+            ),
+        vertices = cms.InputTag("")
+    )
+
+    from RecoParticleFlow.PFTracking.mergedElectronSeeds_cfi import electronMergedSeeds
+    electronMergedSeeds.EcalBasedSeeds = cms.InputTag("electronNHitSeedProducer")
+
+    # from RecoEgamma.EgammaElectronProducers.gedGsfElectrons_cfi import gedGsfElectronsTmp
+    # gedGsfElectronsTmp.seedsTag = cms.InputTag("electronNHitSeedProducer")
+
+    process.reconstruction.replace(process.ecalDrivenElectronSeeds , process.electronNHitSeedProducer)
 
     if hasattr(process, "prevalidation_step"):
         modifier.toReplaceWith(process.prevalidation_step, cms.Path())

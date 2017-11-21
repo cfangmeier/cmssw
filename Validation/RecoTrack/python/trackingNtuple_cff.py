@@ -21,6 +21,7 @@ _includeHits = True
 _includeSeeds = True
 #_includeSeeds = False
 
+
 from CommonTools.RecoAlgos.trackingParticleRefSelector_cfi import trackingParticleRefSelector as _trackingParticleRefSelector
 trackingParticlesIntime = _trackingParticleRefSelector.clone(
     signalOnly = False,
@@ -37,27 +38,8 @@ trackingNtuple.trackingParticlesRef = True
 trackingNtuple.includeAllHits = _includeHits
 trackingNtuple.includeSeeds = _includeSeeds
 
-def _filterForNtuple(lst):
-    ret = []
-    for item in lst:
-        if "PreSplitting" in item:
-            continue
-        if "SeedsA" in item and item.replace("SeedsA", "SeedsB") in lst:
-            ret.append(item.replace("SeedsA", "Seeds"))
-            continue
-        if "SeedsB" in item:
-            continue
-        if "SeedsPair" in item and item.replace("SeedsPair", "SeedsTripl") in lst:
-            ret.append(item.replace("SeedsPair", "Seeds"))
-            continue
-        if "SeedsTripl" in item:
-            continue
-        ret.append(item)
-    return ret
-
 # Build seed tracks from the GSF tracks seeds
 _seedProducers = ['electronMergedSeeds']
-# _seedProducers = _filterForNtuple(_TrackValidation_cff._seedProducers)
 (_seedSelectors, trackingNtupleSeedSelectors) = _TrackValidation_cff._addSeedToTrackProducers(_seedProducers, globals())
 
 trackingNtuple.seedTracks = _seedSelectors
@@ -91,59 +73,6 @@ if _includeSeeds:
     trackingNtupleSequence += trackingNtupleSeedSelectors
     trackingNtupleSequence += trackingNtupleSeedSelectorsOriginal
 
-#-----------------------------------------------------------------------------
-#-----------------------------------------------------------------------------
-electronNHitSeedProducer = cms.EDProducer("ElectronNHitSeedProducer",
-    beamSpot = cms.InputTag("offlineBeamSpot"),
-    initialSeeds = cms.InputTag("initialStepSeeds"),
-    matcherConfig = cms.PSet(
-        detLayerGeom = cms.string('GlobalDetLayerGeometry'),
-        matchingCuts = cms.VPSet(cms.PSet(
-            dPhiMaxHighEt = cms.vdouble(0.05),
-            dPhiMaxHighEtThres = cms.vdouble(20.0),
-            dPhiMaxLowEtGrad = cms.vdouble(-0.002),
-            dRZMaxHighEt = cms.vdouble(9999.0),
-            dRZMaxHighEtThres = cms.vdouble(0.0),
-            dRZMaxLowEtGrad = cms.vdouble(0.0),
-            version = cms.int32(2)
-        ), 
-            cms.PSet(
-                dPhiMaxHighEt = cms.vdouble(0.003),
-                dPhiMaxHighEtThres = cms.vdouble(0.0),
-                dPhiMaxLowEtGrad = cms.vdouble(0.0),
-                dRZMaxHighEt = cms.vdouble(0.05),
-                dRZMaxHighEtThres = cms.vdouble(30.0),
-                dRZMaxLowEtGrad = cms.vdouble(-0.002),
-                etaBins = cms.vdouble(),
-                version = cms.int32(2)
-            ), 
-            cms.PSet(
-                dPhiMaxHighEt = cms.vdouble(0.003),
-                dPhiMaxHighEtThres = cms.vdouble(0.0),
-                dPhiMaxLowEtGrad = cms.vdouble(0.0),
-                dRZMaxHighEt = cms.vdouble(0.05),
-                dRZMaxHighEtThres = cms.vdouble(30.0),
-                dRZMaxLowEtGrad = cms.vdouble(-0.002),
-                etaBins = cms.vdouble(),
-                version = cms.int32(2)
-            )),
-        minNrHits = cms.vuint32(2, 3),
-        minNrHitsValidLayerBins = cms.vint32(4),
-        navSchool = cms.string('SimpleNavigationSchool'),
-        useRecoVertex = cms.bool(False)
-    ),
-    measTkEvt = cms.InputTag("MeasurementTrackerEvent"),
-    superClusters = cms.VInputTag(
-        cms.InputTag("particleFlowSuperClusterECAL","particleFlowSuperClusterECALBarrel"),
-        cms.InputTag("particleFlowSuperClusterECAL","particleFlowSuperClusterECALEndcapWithPreshower"),
-        ),
-    vertices = cms.InputTag("")
-)
-#-----------------------------------------------------------------------------
-#-----------------------------------------------------------------------------
-
-trackingNtuple.electronSeeds = cms.untracked.InputTag("electronNHitSeedProducer")
-
 trackingNtupleSequence += (
     # sim information
     trackingParticlesIntime +
@@ -152,7 +81,6 @@ trackingNtupleSequence += (
     quickTrackAssociatorByHits +
     trackingParticleNumberOfLayersProducer +
     # Add Electron Seed Info
-    electronNHitSeedProducer +
     # ntuplizer
     trackingNtuple
 )

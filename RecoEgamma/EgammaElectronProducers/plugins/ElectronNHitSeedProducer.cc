@@ -59,7 +59,7 @@ private:
 
   /* std::vector<edm::EDGetTokenT<std::vector<reco::SuperClusterRef>> > superClustersTokens_; */
   std::vector<edm::EDGetTokenT<reco::SuperClusterCollection> > superClustersTokens_;
-  edm::EDGetTokenT<TrajectorySeedCollection> initialSeedsToken_ ;
+  std::vector<edm::EDGetTokenT<TrajectorySeedCollection>> initialSeedsTokens_ ;
   edm::EDGetTokenT<std::vector<reco::Vertex> > verticesToken_;
   edm::EDGetTokenT<reco::BeamSpot> beamSpotToken_ ;
   edm::EDGetTokenT<MeasurementTrackerEvent> measTkEvtToken_;
@@ -107,7 +107,7 @@ namespace {
 
 ElectronNHitSeedProducer::ElectronNHitSeedProducer( const edm::ParameterSet& pset):
   matcher_(pset.getParameter<edm::ParameterSet>("matcherConfig")),
-  initialSeedsToken_(consumes<TrajectorySeedCollection>(pset.getParameter<edm::InputTag>("initialSeeds"))),
+  /* initialSeedsToken_(consumes<TrajectorySeedCollection>(pset.getParameter<edm::InputTag>("initialSeeds"))), */
   verticesToken_(consumes<std::vector<reco::Vertex> >(pset.getParameter<edm::InputTag>("vertices"))),
   beamSpotToken_(consumes<reco::BeamSpot>(pset.getParameter<edm::InputTag>("beamSpot"))),
   measTkEvtToken_(consumes<MeasurementTrackerEvent>(pset.getParameter<edm::InputTag>("measTkEvt")))
@@ -118,13 +118,17 @@ ElectronNHitSeedProducer::ElectronNHitSeedProducer( const edm::ParameterSet& pse
   for(const auto& scTag : superClusTags){
     superClustersTokens_.emplace_back(consumes<reco::SuperClusterCollection>(scTag));
   }
+  const auto initialSeedsTags = pset.getParameter<std::vector<edm::InputTag> >("initialSeeds");
+  for(const auto& isTag : initialSeedsTags){
+    initialSeedsTokens_.emplace_back(consumes<TrajectorySeedCollection>(isTag));
+  }
   produces<reco::ElectronSeedCollection>() ;
 }
 
 void ElectronNHitSeedProducer::fillDescriptions(edm::ConfigurationDescriptions& descriptions)
 {
   edm::ParameterSetDescription desc;
-  desc.add<edm::InputTag>("initialSeeds",edm::InputTag("hltElePixelSeedsCombined"));
+  desc.add<std::vector<edm::InputTag> >("initialSeeds",std::vector<edm::InputTag>{edm::InputTag{"hltElePixelSeedsCombined"}});
   desc.add<edm::InputTag>("vertices",edm::InputTag());
   desc.add<edm::InputTag>("beamSpot",edm::InputTag("hltOnlineBeamSpot"));
   desc.add<edm::InputTag>("measTkEvt",edm::InputTag("hltSiStripClusters"));
@@ -148,22 +152,17 @@ void ElectronNHitSeedProducer::produce(edm::Event& iEvent, const edm::EventSetup
 
   auto eleSeeds = std::make_unique<reco::ElectronSeedCollection>();
 
-  auto initialSeedsHandle = getHandle(iEvent,initialSeedsToken_);
 
   auto beamSpotHandle = getHandle(iEvent,beamSpotToken_);
   GlobalPoint primVtxPos = convertToGP(beamSpotHandle->position());
 
+  // Loop over all super-cluster collections (typically barrel and forward are supplied separately)
   for(const auto& superClustersToken : superClustersTokens_){
     edm::Handle<reco::SuperClusterCollection> superClustersHandle = getHandle(iEvent,superClustersToken);
-    /* edm::Handle<std::vector<reco::SuperCluster>> superClustersHandle; */
-    /* iEvent.getByToken(superClustersToken, superClustersHandle); */
-    /* reco::SuperClusterRef superClusRefs(superClustersHandle); */
     size_t nClusters = superClustersHandle->size();
+    // Loop over all super-clusters in collection
     for(size_t scl_idx=0; scl_idx<nClusters; scl_idx++){
-    /* for(auto& superCluster : *superClustersHandle){ */
       edm::Ref<reco::SuperClusterCollection> superClusRef(superClustersHandle, scl_idx);
-
-      /* edm::Ref<vector<SuperClusterCollection> superClusRef(superClus); */
 
       //the eta of the supercluster when mustache clustered is slightly biased due to bending in magnetic field
       //the eta of its seed cluster is a better estimate of the orginal position
@@ -171,27 +170,29 @@ void ElectronNHitSeedProducer::produce(edm::Event& iEvent, const edm::EventSetup
                                                   superClusRef->position().phi(), //supercluster phi
                                                   superClusRef->position().r())); //supercluster r
 
+      // Super over all initial-seed collections
+      for(const auto& initialSeedsToken : initialSeedsTokens_){
+        auto initialSeedsHandle = getHandle(iEvent,initialSeedsToken);
 
-      const std::vector<TrajSeedMatcher::SeedWithInfo> matchedSeeds =
-        matcher_.compatibleSeeds(*initialSeedsHandle,caloPosition,
-                                 primVtxPos,superClusRef->energy());
+        const std::vector<TrajSeedMatcher::SeedWithInfo> matchedSeeds =
+          matcher_.compatibleSeeds(*initialSeedsHandle,caloPosition,
+                                   primVtxPos,superClusRef->energy());
 
-      for(auto& matchedSeed : matchedSeeds){
-        reco::ElectronSeed eleSeed(matchedSeed.seed());
-        reco::ElectronSeed::CaloClusterRef caloClusRef(superClusRef);
-        eleSeed.setCaloCluster(caloClusRef);
-        eleSeed.setNrLayersAlongTraj(matchedSeed.nrValidLayers());
-        for(auto& matchInfo : matchedSeed.matches()){
-          eleSeed.addHitInfo(makeSeedPixelVar(matchInfo,*trackerTopoHandle));
+        for(auto& matchedSeed : matchedSeeds){
+          reco::ElectronSeed eleSeed(matchedSeed.seed());
+          reco::ElectronSeed::CaloClusterRef caloClusRef(superClusRef);
+          eleSeed.setCaloCluster(caloClusRef);
+          eleSeed.setNrLayersAlongTraj(matchedSeed.nrValidLayers());
+          for(auto& matchInfo : matchedSeed.matches()){
+            eleSeed.addHitInfo(makeSeedPixelVar(matchInfo,*trackerTopoHandle));
+          }
+          eleSeeds->emplace_back(eleSeed);
         }
-        eleSeeds->emplace_back(eleSeed);
       }
     }
-
   }
+  std::cout << "Produced " << eleSeeds->size() << " Electron Seeds" << std::endl;
   iEvent.put(std::move(eleSeeds));
 }
-
-
 
 DEFINE_FWK_MODULE(ElectronNHitSeedProducer);
